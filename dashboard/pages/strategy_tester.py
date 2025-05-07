@@ -37,7 +37,7 @@ def main():
         
         provider = st.selectbox(
             "Data Provider",
-            options=["alpaca", "binance"],
+            options=["alpaca"],  # Removed binance option
             index=0
         )
         

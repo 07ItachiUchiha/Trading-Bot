@@ -83,6 +83,75 @@ def execute_trade(symbol, action, quantity, price=None, order_type="market"):
             "message": f"Trade execution failed: {str(e)}"
         }
 
+def _is_closing_trade(symbol, action, quantity):
+    """Check if this trade closes an existing position"""
+    try:
+        account_file = Path(__file__).parent.parent.parent / "data" / "account.json"
+        
+        if not account_file.exists():
+            return False
+            
+        with open(account_file, 'r') as f:
+            account = json.load(f)
+        
+        base_symbol = symbol.split('/')[0] if '/' in symbol else symbol.replace('USD', '')
+        
+        # Check if we have a position in this asset
+        if base_symbol in account['balance']:
+            current_balance = account['balance'][base_symbol]
+            
+            # For sell actions, we're closing if we have a balance
+            if action.lower() == 'sell' and current_balance > 0:
+                return True
+                
+        return False
+    except Exception as e:
+        print(f"Error in _is_closing_trade: {e}")
+        return False
+
+def _calculate_pnl(symbol, action, quantity, executed_price):
+    """Calculate profit/loss for a closing trade"""
+    try:
+        account_file = Path(__file__).parent.parent.parent / "data" / "account.json"
+        
+        if not account_file.exists():
+            return 0.0
+            
+        with open(account_file, 'r') as f:
+            account = json.load(f)
+        
+        base_symbol = symbol.split('/')[0] if '/' in symbol else symbol.replace('USD', '')
+        
+        # Only calculate PnL for sell actions
+        if action.lower() != 'sell':
+            return 0.0
+            
+        # Get entry transactions to calculate average price
+        entry_transactions = []
+        for transaction in account.get('transactions', []):
+            if transaction.get('symbol') == base_symbol and transaction.get('type') == 'buy':
+                entry_transactions.append(transaction)
+                
+        if not entry_transactions:
+            return 0.0
+            
+        # Calculate average entry price
+        total_cost = sum(t.get('amount', 0) * t.get('price', 0) for t in entry_transactions)
+        total_amount = sum(t.get('amount', 0) for t in entry_transactions)
+        
+        if total_amount == 0:
+            return 0.0
+            
+        avg_entry_price = total_cost / total_amount
+        
+        # Calculate PnL
+        pnl = (executed_price - avg_entry_price) * min(quantity, total_amount)
+        return pnl
+        
+    except Exception as e:
+        print(f"Error calculating PnL: {e}")
+        return 0.0
+
 def _process_trade_simulation(order_id, symbol, action, quantity, price, order_type):
     """Simulate trade processing with a realistic delay"""
     global pending_orders, order_updates
@@ -120,12 +189,12 @@ def _process_trade_simulation(order_id, symbol, action, quantity, price, order_t
     # Record the completed order
     with trade_lock:
         order_result = {
-            "order_id": order_id,
+            "id": order_id,  # Use "id" instead of "order_id" for consistency
             "symbol": symbol,
             "action": action,
-            "quantity": quantity,
+            "size": quantity,  # Use "size" instead of "quantity" for consistency
+            "price": executed_price,  # Use "price" instead of "executed_price" for consistency
             "requested_price": price,
-            "executed_price": executed_price,
             "order_type": order_type,
             "status": "completed",
             "timestamp": datetime.now().isoformat(),
@@ -142,37 +211,6 @@ def _process_trade_simulation(order_id, symbol, action, quantity, price, order_t
         
         # Save the trade to history
         _save_trade_to_history(order_result)
-
-def _get_current_price(symbol):
-    """Get the current price for a symbol (simulated for demo)"""
-    # In a real implementation, this would fetch the current price from an API
-    base_prices = {
-        "BTC/USD": 95000,
-        "ETH/USD": 3500,
-        "SOL/USD": 150,
-        "AAPL": 190,
-        "MSFT": 420,
-        "GOOGL": 180,
-        "AMZN": 200
-    }
-    
-    # Use a predefined price or generate a random one
-    base_price = base_prices.get(symbol, 100)
-    
-    # Add some randomness to simulate market movement
-    return base_price * (1 + np.random.uniform(-0.005, 0.005))
-
-def _is_closing_trade(symbol, action, quantity):
-    """Check if this trade is closing an existing position (simulated)"""
-    # In a real implementation, this would check actual positions
-    return np.random.choice([True, False], p=[0.3, 0.7])  # 30% chance it's a closing trade
-
-def _calculate_pnl(symbol, action, quantity, price):
-    """Calculate profit/loss for a closing trade (simulated)"""
-    # In a real implementation, this would calculate the actual P&L
-    # For demo, generate a random P&L between -5% and +5% of position value
-    position_value = price * quantity
-    return position_value * np.random.uniform(-0.05, 0.05)
 
 def _save_trade_to_history(trade_data):
     """Save trade details to history file"""
@@ -199,8 +237,191 @@ def _save_trade_to_history(trade_data):
         with open(history_file, 'w') as f:
             json.dump(history, f, indent=2)
             
+        # Update account balance
+        _update_account_balance(trade_data)
+            
     except Exception as e:
         print(f"Error saving trade to history: {e}")
+
+def _update_account_balance(trade_data):
+    """Update account balance after a trade"""
+    try:
+        account_file = Path(__file__).parent.parent.parent / "data" / "account.json"
+        
+        # Create data directory if it doesn't exist
+        account_file.parent.mkdir(exist_ok=True)
+        
+        # Load current account data
+        if account_file.exists():
+            with open(account_file, 'r') as f:
+                account = json.load(f)
+        else:
+            # Initialize with default values
+            account = {
+                "balance": {
+                    "USD": 10000.0,
+                    "BTC": 0.0,
+                    "ETH": 0.0,
+                    "SOL": 0.0,
+                    "ADA": 0.0,
+                    "DOGE": 0.0,
+                    "BNB": 0.0
+                },
+                "equity": 10000.0,
+                "margin_used": 0.0,
+                "transactions": []
+            }
+        
+        # Process trade impact on balance
+        symbol = trade_data["symbol"].split("/")[0] if "/" in trade_data["symbol"] else trade_data["symbol"]
+        
+        # Record transaction
+        transaction = {
+            "id": trade_data["id"],
+            "type": trade_data["action"],
+            "symbol": symbol,
+            "amount": trade_data["size"],
+            "price": trade_data["price"],
+            "timestamp": trade_data["timestamp"],
+            "status": "completed"
+        }
+        
+        # Update balances based on trade type
+        if trade_data["action"] == "buy":
+            # Deduct USD for the purchase
+            cost = trade_data["price"] * trade_data["size"]
+            account["balance"]["USD"] -= cost
+            
+            # Add the cryptocurrency
+            if symbol in account["balance"]:
+                account["balance"][symbol] += trade_data["size"]
+            else:
+                account["balance"][symbol] = trade_data["size"]
+                
+            transaction["usd_value"] = -cost
+                
+        elif trade_data["action"] == "sell":
+            # Add USD from the sale
+            proceeds = trade_data["price"] * trade_data["size"]
+            account["balance"]["USD"] += proceeds
+            
+            # Subtract the cryptocurrency
+            if symbol in account["balance"]:
+                account["balance"][symbol] = max(0, account["balance"][symbol] - trade_data["size"])
+                
+            transaction["usd_value"] = proceeds
+            
+        # Add PnL if this is a position close
+        if "pnl" in trade_data:
+            transaction["pnl"] = trade_data["pnl"]
+        
+        # Add transaction to history
+        if "transactions" not in account:
+            account["transactions"] = []
+            
+        account["transactions"].append(transaction)
+        
+        # Recalculate equity
+        equity = account["balance"]["USD"]
+        for crypto, amount in account["balance"].items():
+            if crypto != "USD" and amount > 0:
+                # Get latest price if available, otherwise use the trade price
+                if crypto == symbol:
+                    price = trade_data["price"]
+                else:
+                    # Use cached price or a placeholder
+                    price = _get_current_price(f"{crypto}/USD")
+                
+                equity += amount * price
+        
+        account["equity"] = equity
+        
+        # Save updated account data
+        with open(account_file, 'w') as f:
+            json.dump(account, f, indent=2)
+            
+    except Exception as e:
+        print(f"Error updating account balance: {e}")
+
+def get_position_summary():
+    """Get a summary of open positions with real PnL calculations"""
+    try:
+        account_file = Path(__file__).parent.parent.parent / "data" / "account.json"
+        
+        if not account_file.exists():
+            return []
+            
+        # Load account data
+        with open(account_file, 'r') as f:
+            account = json.load(f)
+            
+        positions = []
+        
+        # Process non-USD balances
+        for symbol, amount in account["balance"].items():
+            if symbol != "USD" and amount > 0:
+                # Get current price
+                current_price = _get_current_price(f"{symbol}/USD")
+                
+                # Get entry price by checking transactions
+                entry_transactions = [t for t in account["transactions"] 
+                                     if t["symbol"] == symbol and t["type"] == "buy"]
+                
+                if entry_transactions:
+                    # Calculate average entry price for the symbol
+                    total_cost = sum(t["amount"] * t["price"] for t in entry_transactions)
+                    total_amount = sum(t["amount"] for t in entry_transactions)
+                    entry_price = total_cost / total_amount if total_amount > 0 else current_price
+                    
+                    # Calculate unrealized P&L
+                    unrealized_pnl = (current_price - entry_price) * amount
+                    pnl_percentage = (current_price / entry_price - 1) * 100;
+                    
+                    positions.append({
+                        "symbol": f"{symbol}/USD",
+                        "direction": "long",
+                        "entry_price": entry_price,
+                        "current_price": current_price,
+                        "size": amount,
+                        "unrealized_pnl": unrealized_pnl,
+                        "pnl_percentage": pnl_percentage
+                    })
+        
+        return positions
+        
+    except Exception as e:
+        print(f"Error getting position summary: {e}")
+        return []
+
+def _get_current_price(symbol):
+    """Get current market price for a symbol with fallback to mock data"""
+    try:
+        # Try to get price from Alpaca API
+        # For now, provide reasonable mock prices 
+        # (removed Binance-specific code)
+        base_symbol = symbol.split('/')[0] if '/' in symbol else symbol
+        
+        # Updated price map - removed references to Binance pricing
+        price_map = {
+            "BTC": 65000.0,
+            "ETH": 3500.0,
+            # Removed BNB as it's primarily a Binance token
+            "SOL": 150.0,
+            "ADA": 0.5,
+            "DOGE": 0.15,
+        }
+        
+        base_price = price_map.get(base_symbol, 100.0)
+        
+        # Add small random variation
+        import random
+        variation = random.uniform(-0.01, 0.01)  # ±1%
+        
+        return base_price * (1 + variation)
+        
+    except Exception as e:
+        print(f"Error getting current price: {e}")
+        return 100.0  # Default fallback price
 
 def get_pending_orders():
     """Get the current pending orders"""
@@ -213,42 +434,6 @@ def get_order_updates():
         updates = dict(order_updates)
         order_updates.clear()
         return updates
-
-def get_position_summary():
-    """Get a summary of open positions (simulated for demo)"""
-    # In a real implementation, this would fetch actual positions from the API
-    
-    # Generate some realistic position data
-    symbols = ["BTC/USD", "ETH/USD", "AAPL", "MSFT"]
-    positions = []
-    
-    for symbol in symbols:
-        # Randomly decide if we have a position in this symbol
-        if np.random.random() < 0.5:
-            # Determine position details
-            direction = np.random.choice(["long", "short"])
-            entry_price = _get_current_price(symbol) * (1 + np.random.uniform(-0.1, 0.1))
-            current_price = _get_current_price(symbol)
-            size = round(np.random.uniform(0.1, 2.0), 2)
-            
-            # Calculate P&L
-            if direction == "long":
-                unrealized_pnl = (current_price - entry_price) * size
-            else:
-                unrealized_pnl = (entry_price - current_price) * size
-                
-            # Create position record
-            positions.append({
-                "symbol": symbol,
-                "direction": direction,
-                "entry_price": entry_price,
-                "current_price": current_price,
-                "size": size,
-                "unrealized_pnl": unrealized_pnl,
-                "pnl_percentage": (unrealized_pnl / (entry_price * size)) * 100
-            })
-    
-    return positions
 
 def display_trade_controls(symbol=None, default_quantity=None):
     """Display trade control panel with buy and sell buttons"""
@@ -265,7 +450,7 @@ def display_trade_controls(symbol=None, default_quantity=None):
                 base_currency = symbol.split('/')[0]
                 quote_currency = symbol.split('/')[1]
             else:
-                # Handle BTCUSD format
+                # Handle Alpaca format (BTCUSD) - removed Binance format
                 if symbol.endswith('USD'):
                     base_currency = symbol[:-3]
                     quote_currency = 'USD'

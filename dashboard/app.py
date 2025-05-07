@@ -111,10 +111,10 @@ def main():
     with st.sidebar:
         st.sidebar.subheader(f"Welcome, {st.session_state.user['username']}")
         
-        # Data provider selection
+        # Data provider selection - removed Binance option
         data_provider = st.sidebar.selectbox(
             "Data Provider",
-            options=["Alpaca", "Binance"],
+            options=["Alpaca"],  # Removed Binance option
             index=0,
             key="data_provider_select"
         )
@@ -141,17 +141,17 @@ def main():
         # Auto-refresh toggle
         auto_refresh = st.sidebar.checkbox("Auto-refresh data", value=True, key="auto_refresh")
         
-        # Auto-update signals toggle without directly modifying session state
-        def update_signals_changed():
-            pass  # The value is updated automatically via the key
-            
-        st.sidebar.checkbox(
+        # Auto-update signals toggle - fixed to avoid duplicate widget ID
+        auto_update_signals = st.sidebar.checkbox(
             "Auto-update signals", 
             value=st.session_state.update_signals,
-            key="update_signals",
-            on_change=update_signals_changed
+            key="update_signals_toggle"  # Changed key to avoid conflict
         )
         
+        # Update session state
+        if st.session_state.update_signals != auto_update_signals:
+            st.session_state.update_signals = auto_update_signals
+            
         if st.sidebar.button("Refresh Data", key="sidebar_refresh_button") or (auto_refresh and "last_refresh" not in st.session_state):
             # Initialize the appropriate WebSocket manager
             ws = initialize_websocket(data_provider)
