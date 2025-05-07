@@ -236,8 +236,7 @@ def main():
 
 def display_strategy_tester():
     """Display the strategy tester page"""
-    # Instead of importing from strategy_tester.py, call the function directly
-    # Import necessary components directly here
+    # Import necessary components directly
     from dashboard.components.trading import fetch_historical_data, plot_candlestick_chart
     from dashboard.components.strategy_selector import display_strategy_selector, display_strategy_performance
     
@@ -248,7 +247,7 @@ def display_strategy_tester():
     with st.sidebar:
         st.header("Data Settings")
         
-        symbol = st.text_input("Symbol", value="BTC/USD")
+        symbol = st.text_input("Symbol", value=st.session_state.get('symbol', "BTC/USD"))
         
         interval = st.selectbox(
             "Time Interval",

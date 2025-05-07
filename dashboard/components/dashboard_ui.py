@@ -633,10 +633,13 @@ def render_settings_tab():
     st.subheader("Strategy Settings")
     strategy_col1, strategy_col2 = st.columns(2)
     
+    # Ensure these options match exactly with those in strategy_selector.py
+    strategy_options = ["Combined Strategy", "Bollinger Bands + RSI", "EMA Crossover", "Breakout Detection"]
+    
     with strategy_col1:
         selected_strategy = st.selectbox(
             "Trading Strategy",
-            options=["Combined Strategy", "Bollinger Bands + RSI", "EMA Crossover", "Breakout Detection"],
+            options=strategy_options,
             index=0,
             key="settings_strategy"
         )

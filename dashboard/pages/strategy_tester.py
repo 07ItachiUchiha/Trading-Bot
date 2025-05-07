@@ -10,8 +10,8 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from dashboard.components.trading import fetch_historical_data, plot_candlestick_chart
 from dashboard.components.strategy_selector import display_strategy_selector, display_strategy_performance
 
-def display_strategy_tester_page():
-    """Main function for the strategy tester page"""
+def main():
+    """Display the strategy tester page"""
     st.title("Strategy Tester")
     st.write("Test and compare different trading strategies on historical data.")
 
@@ -19,7 +19,7 @@ def display_strategy_tester_page():
     with st.sidebar:
         st.header("Data Settings")
         
-        symbol = st.text_input("Symbol", value="BTC/USD")
+        symbol = st.text_input("Symbol", value=st.session_state.get('symbol', "BTC/USD"))
         
         interval = st.selectbox(
             "Time Interval",
@@ -95,3 +95,6 @@ def display_strategy_tester_page():
     except Exception as e:
         st.error(f"Error: {e}")
         st.info("Please check your input parameters and try again.")
+
+if __name__ == "__main__":
+    main()
