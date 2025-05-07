@@ -5,10 +5,13 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-# Import components
-# from dashboard.components.some_component import display_some_component
+# REMOVE THIS - Don't set page config at the top level:
+# st.set_page_config(
+#     page_title="Trading Bot - Page Name",
+#     page_icon="📊",
+#     layout="wide"
+# )
 
-# Define a function to display page content
 def display_page():
     """Display the page content"""
     st.title("Page Title")

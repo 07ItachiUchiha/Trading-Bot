@@ -5,24 +5,26 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-# Import components - Fix potential import errors
-try:
-    from dashboard.components.news_analysis import display_news_analysis
-except ImportError:
-    # Create a fallback function if the component doesn't exist
-    def display_news_analysis(symbol=None):
-        st.warning("News analysis component is not available.")
-        st.info("Make sure you have implemented the news_analysis.py component.")
+# Import components
+from dashboard.components.news_analysis import display_news_analysis
 
-def display_news_analysis_page():
-    """Display the news analysis page"""
+# This allows the file to be run directly or imported
+if __name__ == "__main__":
+    # Only set page config when running the file directly
+    st.set_page_config(
+        page_title="Trading Bot - News Analysis",
+        page_icon="📰",
+        layout="wide"
+    )
+
+    # Display page content
     st.title("📰 News Trading Analysis")
     st.write("Analyze news sentiment and get trading recommendations based on market sentiment.")
 
     # Display symbol selector
     symbol = st.selectbox(
         "Select Symbol",
-        options=["BTC/USD", "ETH/USD", "ADA/USD", "DOGE/USD", "AAPL", "MSFT", "GOOGL", "AMZN"],
+        options=["BTC/USD", "ETH/USD", "SOL/USD", "ADA/USD", "DOGE/USD", "AAPL", "MSFT", "GOOGL", "AMZN"],
         index=0
     )
 
@@ -43,16 +45,3 @@ def display_news_analysis_page():
         The system analyzes news articles from multiple sources, weighing more recent news more heavily.
         Sentiment is tracked over time to identify trends and changes in market perception.
         """)
-
-# This allows the file to be run directly or imported
-if __name__ == "__main__":
-    # Only set page config when running the file directly
-    st.set_page_config(
-        page_title="Trading Bot - News Analysis",
-        page_icon="📰",
-        layout="wide"
-    )
-    display_news_analysis_page()
-else:
-    # When imported, just call the display function without setting page config
-    main = display_news_analysis_page

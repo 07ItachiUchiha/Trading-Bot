@@ -1,58 +1,100 @@
 import streamlit as st
 import sys
 from pathlib import Path
+import pandas as pd
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-# Import components with error handling
-try:
-    from dashboard.components.strategy_selector import display_strategy_selector
-except ImportError:
-    def display_strategy_selector():
-        st.warning("Strategy selector component is not available.")
-        st.info("Make sure you have implemented the strategy_selector.py component.")
+# Import components
+from dashboard.components.trading import fetch_historical_data, plot_candlestick_chart
+from dashboard.components.strategy_selector import display_strategy_selector, display_strategy_performance
 
-try:
-    from dashboard.components.strategy_parameters import display_strategy_parameters
-except ImportError:
-    def display_strategy_parameters():
-        st.warning("Strategy parameters component is not available.")
-
-def display_strategy_tester_page():
+def main():
     """Display the strategy tester page"""
-    st.title("🧪 Strategy Tester")
-    st.write("Configure and test trading strategies against historical data.")
-    
-    # Create tabs for better organization
-    tab1, tab2 = st.tabs(["Strategy Selection", "Parameter Tuning"])
-    
-    with tab1:
-        # Display strategy selector
-        display_strategy_selector()
-    
-    with tab2:
-        # Display strategy parameters
-        try:
-            display_strategy_parameters()
-        except Exception as e:
-            st.error(f"Error displaying strategy parameters: {e}")
-    
-    # Display warning about API errors
-    st.warning("""
-    **Note:** If you see API errors in the logs (403 Forbidden), please check your API credentials.
-    Many errors show "Trading halted" due to authentication issues with the market data provider.
-    """)
+    st.title("Strategy Tester")
+    st.write("Test and compare different trading strategies on historical data.")
 
-# This allows the file to be run directly or imported
+    # Sidebar options
+    with st.sidebar:
+        st.header("Data Settings")
+        
+        symbol = st.text_input("Symbol", value=st.session_state.get('symbol', "BTC/USD"))
+        
+        interval = st.selectbox(
+            "Time Interval",
+            options=["1m", "5m", "15m", "30m", "1h", "4h", "1d"],
+            index=4
+        )
+        
+        limit = st.slider(
+            "Number of Candles",
+            min_value=50,
+            max_value=500,
+            value=200,
+            step=10
+        )
+        
+        provider = st.selectbox(
+            "Data Provider",
+            options=["alpaca"],  # Removed binance option
+            index=0
+        )
+        
+        # Store symbol in session state for other components to use
+        st.session_state.symbol = symbol
+
+    # Fetch historical data
+    try:
+        with st.spinner("Fetching market data..."):
+            data = fetch_historical_data(symbol, interval, limit, provider)
+        
+        # Display strategy selector
+        strategy_name, signals, live_execution = display_strategy_selector(data)
+        
+        # Show candlestick chart with strategy signals
+        st.subheader(f"{symbol} {interval} Chart with {strategy_name.replace('_', ' ').title()} Signals")
+        fig = plot_candlestick_chart(data, signals)
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Display strategy performance
+        display_strategy_performance(strategy_name, data, signals)
+        
+        # Display execution status
+        if live_execution:
+            st.success("✅ Live execution is enabled for this strategy")
+            
+            with st.expander("Live Execution Settings"):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    risk_percent = st.slider("Risk Per Trade (%)", 0.1, 5.0, 1.0, 0.1)
+                    position_size = st.slider("Max Position Size (%)", 1.0, 50.0, 10.0, 1.0)
+                
+                with col2:
+                    take_profit = st.slider("Take Profit (%)", 1.0, 20.0, 3.0, 0.5)
+                    stop_loss = st.slider("Stop Loss (%)", 1.0, 10.0, 2.0, 0.5)
+                
+                confirm_execution = st.button("Confirm Live Execution Settings")
+                
+                if confirm_execution:
+                    st.session_state["execution_confirmed"] = True
+                    st.session_state["execution_settings"] = {
+                        "strategy": strategy_name,
+                        "symbol": symbol,
+                        "interval": interval,
+                        "risk_percent": risk_percent,
+                        "position_size": position_size,
+                        "take_profit": take_profit,
+                        "stop_loss": stop_loss
+                    }
+                    st.success("Execution settings confirmed and saved!")
+        else:
+            st.info("ℹ️ Live execution is disabled for this strategy")
+
+    except Exception as e:
+        st.error(f"Error: {e}")
+        st.info("Please check your input parameters and try again.")
+
 if __name__ == "__main__":
-    # Only set page config when running the file directly
-    st.set_page_config(
-        page_title="Trading Bot - Strategy Tester",
-        page_icon="🧪",
-        layout="wide"
-    )
-    display_strategy_tester_page()
-else:
-    # When imported, just call the display function without setting page config
-    main = display_strategy_tester_page
+    main()

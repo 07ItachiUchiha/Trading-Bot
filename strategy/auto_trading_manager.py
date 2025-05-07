@@ -599,14 +599,3 @@ class AutoTradingManager:
     def get_current_pnl(self):
         """Get current total PnL"""
         return self.total_pnl
-
-    def update_symbols(self):
-        """Update trading symbols to remove unsupported tokens"""
-        # Remove BNB which is causing errors (primarily a Binance token)
-        self.symbols = [symbol for symbol in self.symbols if 'BNB' not in symbol]
-        
-        # Use only symbols supported by your current API provider
-        supported_symbols = ["BTC/USD", "ETH/USD", "SOL/USD", "ADA/USD", "DOGE/USD"]
-        self.symbols = [symbol for symbol in self.symbols if symbol in supported_symbols]
-        
-        self.logger.info(f"Updated symbols list: {self.symbols}")
