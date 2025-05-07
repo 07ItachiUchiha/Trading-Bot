@@ -1,0 +1,114 @@
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+def append_to_dataframe(df, new_data):
+    """
+    Safely append data to a DataFrame, handling pandas' deprecated append method
+    
+    Args:
+        df (pd.DataFrame): Original DataFrame
+        new_data (dict or pd.DataFrame): New data to append
+        
+    Returns:
+        pd.DataFrame: Updated DataFrame with new data
+    """
+    # Convert dict to DataFrame if needed
+    if isinstance(new_data, dict):
+        new_row = pd.DataFrame([new_data])
+    elif isinstance(new_data, pd.DataFrame):
+        new_row = new_data
+    else:
+        raise ValueError("new_data must be a dictionary or DataFrame")
+    
+    # Use pandas concat instead of append (which is deprecated)
+    return pd.concat([df, new_row], ignore_index=True)
+
+def update_ohlc_candle(df, new_candle, match_column='time'):
+    """
+    Update an existing OHLC candle or append a new one
+    
+    Args:
+        df (pd.DataFrame): DataFrame containing OHLC data
+        new_candle (dict): New candle data
+        match_column (str): Column to match for updates (usually time or timestamp)
+        
+    Returns:
+        pd.DataFrame: Updated DataFrame
+    """
+    if df.empty:
+        # Create a new DataFrame if original is empty
+        return pd.DataFrame([new_candle])
+    
+    # Ensure match_column exists in both the DataFrame and new_candle
+    if match_column not in df.columns or match_column not in new_candle:
+        # Just append as new row if we can't match
+        return append_to_dataframe(df, new_candle)
+    
+    # Convert to comparable format if timestamps
+    if isinstance(new_candle[match_column], str):
+        new_time = pd.to_datetime(new_candle[match_column])
+    else:
+        new_time = new_candle[match_column]
+        
+    # Find matching row
+    match_idx = df[df[match_column] == new_time].index
+    
+    if len(match_idx) > 0:
+        # Update existing candle
+        idx = match_idx[0]
+        
+        # Update high/low
+        if 'high' in new_candle and 'high' in df.columns:
+            df.loc[idx, 'high'] = max(df.loc[idx, 'high'], new_candle['high'])
+        
+        if 'low' in new_candle and 'low' in df.columns:
+            df.loc[idx, 'low'] = min(df.loc[idx, 'low'], new_candle['low'])
+            
+        # Update close price and volume 
+        if 'close' in new_candle and 'close' in df.columns:
+            df.loc[idx, 'close'] = new_candle['close']
+            
+        if 'volume' in new_candle and 'volume' in df.columns:
+            df.loc[idx, 'volume'] = new_candle['volume']
+            
+        return df
+    else:
+        # Add as new candle
+        return append_to_dataframe(df, new_candle)
+
+def clean_dataframe(df):
+    """
+    Clean a DataFrame by handling NaN values and ensuring proper types
+    
+    Args:
+        df (pd.DataFrame): DataFrame to clean
+        
+    Returns:
+        pd.DataFrame: Cleaned DataFrame
+    """
+    # Make a copy to avoid SettingWithCopyWarning
+    result = df.copy()
+    
+    # Convert timestamp column if it exists and isn't already datetime
+    if 'time' in result.columns and not pd.api.types.is_datetime64_any_dtype(result['time']):
+        try:
+            result['time'] = pd.to_datetime(result['time'])
+        except:
+            pass
+            
+    # Convert numeric columns
+    numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+    for col in numeric_cols:
+        if col in result.columns:
+            # Fill NaN values with appropriate defaults
+            if col == 'volume':
+                result[col] = result[col].fillna(0)
+            else:
+                # Forward fill price data
+                result[col] = result[col].fillna(method='ffill').fillna(method='bfill').fillna(0)
+            
+            # Ensure numeric type
+            result[col] = pd.to_numeric(result[col], errors='coerce')
+    
+    return result
