@@ -6,35 +6,35 @@ from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
+import numpy as np
 
 def load_trade_history(filepath=None):
-    """
-    Load trade history from file or use sample data
-    
-    Args:
-        filepath: Optional path to trade history JSON file
-    
-    Returns:
-        DataFrame containing trade history
-    """
-    if filepath and os.path.exists(filepath):
-        try:
-            with open(filepath, 'r') as f:
-                data = json.load(f)
+    """Load trade history from file with improved error handling"""
+    try:
+        if not filepath:
+            # Use sample data if no file is provided
+            return generate_sample_trade_data()
+        
+        with open(filepath, 'r') as f:
+            data = json.load(f)
             
-            # Convert to DataFrame
-            df = pd.DataFrame(data.get('trades', []))
+        if 'trades' in data and data['trades']:
+            df = pd.DataFrame(data['trades'])
             
-            # Parse dates
-            if not df.empty and 'timestamp' in df.columns:
+            # Convert timestamp to datetime
+            if 'timestamp' in df.columns:
                 df['timestamp'] = pd.to_datetime(df['timestamp'])
+            
+            # Ensure we have numeric PnL data - replace any non-numeric values
+            if 'pnl' in df.columns:
+                df['pnl'] = pd.to_numeric(df['pnl'], errors='coerce').fillna(0)
                 
             return df
-        except Exception as e:
-            st.error(f"Error loading trade history: {e}")
-    
-    # If no file or error, create sample data
-    return generate_sample_trade_data()
+        else:
+            return generate_sample_trade_data()
+    except Exception as e:
+        st.error(f"Error loading trade history: {e}")
+        return generate_sample_trade_data()
 
 def generate_sample_trade_data():
     """Generate sample trade data for demonstration"""
@@ -113,38 +113,55 @@ def generate_sample_trade_data():
     return df
 
 def plot_pnl_chart(trade_data, aggregate_by_day=False):
-    """
-    Plot cumulative PnL over time
+    """Create a PnL chart with error handling for infinite values"""
+    # Convert to DataFrame if it's not already
+    df = pd.DataFrame(trade_data)
     
-    Args:
-        trade_data: DataFrame containing trade history
-        aggregate_by_day: Whether to aggregate PnL by day
+    # Basic validation
+    if df.empty:
+        st.warning("No trade data available to plot")
+        # Return an empty figure with a message
+        fig = go.Figure()
+        fig.update_layout(
+            title="No Trade Data Available",
+            annotations=[dict(
+                text="No trade data to display. Please execute some trades first.",
+                showarrow=False,
+                xref="paper", yref="paper",
+                x=0.5, y=0.5
+            )]
+        )
+        return fig
         
-    Returns:
-        Plotly figure
-    """
-    if trade_data.empty:
-        return go.Figure()
+    # Ensure timestamp column exists and is datetime
+    if 'timestamp' not in df.columns:
+        df['timestamp'] = datetime.now()
+    else:
+        df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+        # Drop rows with invalid timestamps
+        df = df.dropna(subset=['timestamp'])
+        
+    # Ensure PnL column exists with valid numeric values
+    if 'pnl' not in df.columns:
+        df['pnl'] = 0.0
     
-    # Make a copy of the data
-    df = trade_data.copy()
+    # Convert PnL to numeric, handle errors by setting to 0
+    df['pnl'] = pd.to_numeric(df['pnl'], errors='coerce').fillna(0)
     
-    # Make sure all required columns exist
-    required_cols = ['timestamp', 'pnl', 'action', 'symbol']
-    for col in required_cols:
-        if col not in df.columns:
-            st.error(f"Required column {col} not found in trade data")
-            return go.Figure()
-    
-    # Make sure timestamp is datetime
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    
-    # Sort by timestamp
-    df = df.sort_values('timestamp')
-    
-    # Calculate cumulative PnL
+    # Calculate cumulative PnL with handling for invalid values
     df['cumulative_pnl'] = df['pnl'].cumsum()
     
+    # Replace any potential infinite values with NaN and then drop them
+    df.replace([np.inf, -np.inf], np.nan, inplace=True)
+    df = df.dropna(subset=['cumulative_pnl'])
+    
+    if df.empty:
+        st.warning("No valid trade data after filtering")
+        fig = go.Figure()
+        fig.update_layout(title="No Valid Trade Data")
+        return fig
+        
+    # Now proceed with the charting logic
     if aggregate_by_day:
         # Add date column for aggregation
         df['date'] = df['timestamp'].dt.date
@@ -155,8 +172,12 @@ def plot_pnl_chart(trade_data, aggregate_by_day=False):
             'timestamp': 'first'  # Keep first timestamp of the day
         }).reset_index()
         
-        # Calculate cumulative PnL
+        # Calculate cumulative PnL - safely
         daily_pnl['cumulative_pnl'] = daily_pnl['pnl'].cumsum()
+        
+        # Handle any infinite values
+        daily_pnl.replace([np.inf, -np.inf], np.nan, inplace=True)
+        daily_pnl = daily_pnl.dropna(subset=['cumulative_pnl'])
         
         # Create figure
         fig = px.line(
@@ -167,25 +188,27 @@ def plot_pnl_chart(trade_data, aggregate_by_day=False):
             labels={'cumulative_pnl': 'Cumulative PnL', 'date': 'Date'}
         )
         
-        # Add markers for positive and negative days
+        # Add markers for positive and negative days - safely
         positive_days = daily_pnl[daily_pnl['pnl'] > 0]
         negative_days = daily_pnl[daily_pnl['pnl'] < 0]
         
-        fig.add_trace(go.Scatter(
-            x=positive_days['date'],
-            y=positive_days['cumulative_pnl'],
-            mode='markers',
-            marker=dict(color='green', size=8),
-            name='Positive Day'
-        ))
+        if not positive_days.empty:
+            fig.add_trace(go.Scatter(
+                x=positive_days['date'],
+                y=positive_days['cumulative_pnl'],
+                mode='markers',
+                marker=dict(color='green', size=8),
+                name='Positive Day'
+            ))
         
-        fig.add_trace(go.Scatter(
-            x=negative_days['date'],
-            y=negative_days['cumulative_pnl'],
-            mode='markers',
-            marker=dict(color='red', size=8),
-            name='Negative Day'
-        ))
+        if not negative_days.empty:
+            fig.add_trace(go.Scatter(
+                x=negative_days['date'],
+                y=negative_days['cumulative_pnl'],
+                mode='markers',
+                marker=dict(color='red', size=8),
+                name='Negative Day'
+            ))
     else:
         # Basic line chart with all trades
         fig = px.line(
@@ -196,52 +219,52 @@ def plot_pnl_chart(trade_data, aggregate_by_day=False):
             labels={'cumulative_pnl': 'Cumulative PnL', 'timestamp': 'Time'}
         )
         
-        # Add Buy/Sell markers
-        buy_trades = df[df['action'] == 'buy']
-        sell_trades = df[df['action'] == 'sell']
-        
-        fig.add_trace(go.Scatter(
-            x=buy_trades['timestamp'],
-            y=buy_trades['cumulative_pnl'],
-            mode='markers',
-            marker=dict(color='green', symbol='triangle-up', size=10),
-            name='Buy'
-        ))
-        
-        fig.add_trace(go.Scatter(
-            x=sell_trades['timestamp'],
-            y=sell_trades['cumulative_pnl'],
-            mode='markers',
-            marker=dict(color='red', symbol='triangle-down', size=10),
-            name='Sell'
-        ))
+        # Add Buy/Sell markers if columns exist
+        if 'action' in df.columns:
+            buy_trades = df[df['action'] == 'buy']
+            sell_trades = df[df['action'] == 'sell']
+            
+            if not buy_trades.empty:
+                fig.add_trace(go.Scatter(
+                    x=buy_trades['timestamp'],
+                    y=buy_trades['cumulative_pnl'],
+                    mode='markers',
+                    marker=dict(color='blue', size=8, symbol='triangle-up'),
+                    name='Buy'
+                ))
+            
+            if not sell_trades.empty:
+                fig.add_trace(go.Scatter(
+                    x=sell_trades['timestamp'],
+                    y=sell_trades['cumulative_pnl'],
+                    mode='markers',
+                    marker=dict(color='red', size=8, symbol='triangle-down'),
+                    name='Sell'
+                ))
     
-    # Add horizontal line at 0
-    fig.add_shape(
-        type='line',
-        x0=df['timestamp'].min(),
-        y0=0,
-        x1=df['timestamp'].max(),
-        y1=0,
-        line=dict(color='gray', dash='dash'),
-    )
-    
-    # Improve layout
+    # Improve figure layout with better formatting and error prevention
     fig.update_layout(
+        autosize=True,
+        height=500,
         hovermode='x unified',
         legend=dict(
-            orientation='h',
-            yanchor='bottom',
+            orientation="h",
+            yanchor="bottom",
             y=1.02,
             xanchor='right',
             x=1
+        ),
+        yaxis=dict(
+            title='Cumulative PnL ($)',
+            tickprefix='$',
+            fixedrange=False
         )
     )
     
     return fig
 
 def display_pnl_chart(trades_df=None):
-    """Display PnL visualization in Streamlit"""
+    """Display PnL visualization in Streamlit with improved error handling"""
     st.header("📈 PnL Performance")
     
     with st.expander("PnL Chart Options", expanded=True):
@@ -265,23 +288,31 @@ def display_pnl_chart(trades_df=None):
         trades_df = load_trade_history(selected_file)
     
     # Display chart
-    fig = plot_pnl_chart(trades_df, aggregate_by_day)
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Summary statistics
-    if not trades_df.empty:
-        with st.expander("PnL Summary Statistics"):
-            col1, col2, col3, col4 = st.columns(4)
-            
-            total_pnl = trades_df['pnl'].sum()
-            profitable_trades = (trades_df['pnl'] > 0).sum()
-            losing_trades = (trades_df['pnl'] < 0).sum()
-            win_rate = profitable_trades / len(trades_df) * 100 if len(trades_df) > 0 else 0
-            
-            col1.metric("Total PnL", f"${total_pnl:.2f}")
-            col2.metric("Profitable Trades", profitable_trades)
-            col3.metric("Losing Trades", losing_trades)
-            col4.metric("Win Rate", f"{win_rate:.2f}%")
+    try:
+        fig = plot_pnl_chart(trades_df, aggregate_by_day)
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Summary statistics
+        if not trades_df.empty and 'pnl' in trades_df.columns:
+            with st.expander("PnL Summary Statistics"):
+                col1, col2, col3, col4 = st.columns(4)
+                
+                # Convert PnL to numeric safely
+                pnl_values = pd.to_numeric(trades_df['pnl'], errors='coerce')
+                
+                # Calculate metrics safely
+                total_pnl = pnl_values.sum()
+                profitable_trades = (pnl_values > 0).sum()
+                losing_trades = (pnl_values < 0).sum()
+                win_rate = profitable_trades / len(pnl_values) * 100 if len(pnl_values) > 0 else 0
+                
+                col1.metric("Total PnL", f"${total_pnl:.2f}")
+                col2.metric("Profitable Trades", profitable_trades)
+                col3.metric("Losing Trades", losing_trades)
+                col4.metric("Win Rate", f"{win_rate:.2f}%")
+    except Exception as e:
+        st.error(f"Error displaying PnL chart: {e}")
+        st.info("Unable to render chart due to data issues. Please check your trade history data.")
 
 def find_trade_history_files():
     """Find trade history files in the exports directory"""

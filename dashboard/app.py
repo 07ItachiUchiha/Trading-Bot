@@ -111,24 +111,14 @@ def main():
     with st.sidebar:
         st.sidebar.subheader(f"Welcome, {st.session_state.user['username']}")
         
-        # Data provider selection - removed Binance option
-        data_provider = st.sidebar.selectbox(
-            "Data Provider",
-            options=["Alpaca"],  # Removed Binance option
-            index=0,
-            key="data_provider_select"
-        )
-        
-        # Convert to lowercase for consistency in code
-        data_provider = data_provider.lower()
+        # Data provider selection - only show Alpaca option
+        data_provider = "alpaca"
+        st.sidebar.text("Data Provider: Alpaca")
         
         # Store provider in session state
-        if "data_provider" not in st.session_state or st.session_state.data_provider != data_provider:
-            st.session_state.data_provider = data_provider
-            # Reset data if provider changes
-            if "data" in st.session_state:
-                del st.session_state.data
-        
+        st.session_state.data_provider = data_provider
+            
+        # Symbol selection
         st.sidebar.title("📊 Market Selection")
         symbol = st.sidebar.text_input("Symbol", value="BTCUSD", key="sidebar_symbol")
         timeframe = st.sidebar.selectbox(
@@ -145,13 +135,13 @@ def main():
         auto_update_signals = st.sidebar.checkbox(
             "Auto-update signals", 
             value=st.session_state.update_signals,
-            key="update_signals_toggle"  # Changed key to avoid conflict
+            key="update_signals_toggle" 
         )
         
         # Update session state
         if st.session_state.update_signals != auto_update_signals:
             st.session_state.update_signals = auto_update_signals
-            
+        
         if st.sidebar.button("Refresh Data", key="sidebar_refresh_button") or (auto_refresh and "last_refresh" not in st.session_state):
             # Initialize the appropriate WebSocket manager
             ws = initialize_websocket(data_provider)
@@ -213,12 +203,18 @@ def main():
     st.sidebar.title("Navigation")
     page = st.sidebar.radio(
         "Select Page",
-        ["Trading Dashboard", "Strategy Tester", "PnL Analysis", "Trade History", "Wallet", "Settings"]
+        ["Trading Dashboard", "Manual Trading", "News Analysis", "Strategy Tester", "PnL Analysis", "Trade History", "Wallet"]
     )
     
     # Display selected page
     if page == "Trading Dashboard":
         display_trading_dashboard()
+    elif page == "Manual Trading":
+        from dashboard.pages.manual_trading import main as display_manual_trading
+        display_manual_trading()
+    elif page == "News Analysis":
+        from dashboard.pages.news_analysis import display_news_analysis
+        display_news_analysis(symbol)
     elif page == "Strategy Tester":
         display_strategy_tester()
     elif page == "PnL Analysis":
@@ -227,12 +223,6 @@ def main():
         display_trade_history()
     elif page == "Wallet":
         display_wallet_page()
-    elif page == "Settings":
-        display_settings()
-
-    # Initialize default values in session state if not exist
-    if "symbols" not in st.session_state:
-        st.session_state.symbols = DEFAULT_SYMBOLS
 
 def display_strategy_tester():
     """Display the strategy tester page"""
@@ -343,7 +333,7 @@ def display_trading_dashboard():
         
         # Show status of selected strategy
         if live_execution:
-            st.success(f"✅ {strategy_name.replace('_', ' ').title()} strategy is active for live trading")
+            st.success(f"✅ {strategy_name.replace('_', ' ').title()} strategy is active for manual trading")
         else:
             st.warning(f"⚠️ {strategy_name.replace('_', ' ').title()} strategy is in monitoring mode only")
     
@@ -353,17 +343,49 @@ def display_trading_dashboard():
         display_quick_wallet()
     
     # Continue with other tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["Live Trading", "Trade History", "Performance", "Settings"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Market Overview", "News", "Trade History", "Settings"])
     
     with tab1:
-        # Pass both data and signals to render_live_trading_tab
-        render_live_trading_tab(data, signals)
+        # Display market data and strategy information
+        st.subheader(f"{symbol} {interval} Chart")
+        fig = plot_candlestick_chart(data, signals)
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Display key market stats
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if 'close' in data:
+                current_price = data['close'].iloc[-1]
+                open_price = data['open'].iloc[-1]
+                change = (current_price - open_price) / open_price * 100
+                st.metric("Current Price", f"${current_price:.2f}", f"{change:.2f}%")
+            else:
+                st.metric("Current Price", "N/A")
+        
+        with col2:
+            if 'volume' in data:
+                volume = data['volume'].iloc[-1]
+                st.metric("Volume", f"{volume:,.0f}")
+            else:
+                st.metric("Volume", "N/A")
+                
+        with col3:
+            # Display last trade if available
+            from dashboard.components.trade_controls import get_order_updates
+            latest_orders = get_order_updates()
+            if latest_orders:
+                last_order = list(latest_orders.values())[-1]
+                st.metric("Last Trade", f"{last_order['action'].upper()} at ${last_order['price']:.2f}")
+            else:
+                st.metric("Last Trade", "No recent trades")
     
     with tab2:
-        render_trade_history_tab()
+        # Display news sentiment analysis
+        from dashboard.components.news_analysis import display_news_analysis
+        display_news_analysis(symbol)
     
     with tab3:
-        render_performance_tab()
+        render_trade_history_tab()
     
     with tab4:
         render_settings_tab()
