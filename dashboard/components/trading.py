@@ -658,3 +658,9 @@ def get_auto_trader_status():
         status["pnl"] = auto_trader_instance.get_current_pnl() if hasattr(auto_trader_instance, 'get_current_pnl') else 0
     
     return status
+
+# Force a rerun periodically to refresh the UI
+if not hasattr(st.session_state, 'last_rerun') or \
+   (datetime.datetime.now() - st.session_state.last_rerun).total_seconds() > 5:
+    st.session_state.last_rerun = datetime.datetime.now()
+    st.rerun()

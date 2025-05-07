@@ -114,13 +114,13 @@ try:
             with col1:
                 if st.button("Quick Buy", key="quick_buy", use_container_width=True, type="primary"):
                     st.session_state.quick_action = "buy"
-                    st.experimental_rerun()
+                    st.rerun()
                     
             with col2:
                 if st.button("Quick Sell", key="quick_sell", use_container_width=True):
                     st.session_state.quick_action = "sell"
-                    st.experimental_rerun()
-    
+                    st.rerun()
+
     # Strategy Tab - New Tab for Strategy Selection
     with strategy_tab:
         # Display strategy selector
