@@ -22,8 +22,8 @@ from .trading import (
 )
 from .database import get_trades_from_db, add_trade_to_db, update_trade_in_db
 
-def render_live_trading_tab(data):
-    """Render the Live Trading tab content"""
+def render_live_trading_tab(data, signals=None):
+    """Render the Live Trading tab content with strategy signals"""
     st.subheader("Live Trading")
     
     col1, col2, col3 = st.columns([1, 1, 1])
@@ -41,7 +41,9 @@ def render_live_trading_tab(data):
     
     with col2:
         st.subheader("Strategy Status")
-        signals, _ = calculate_signals(data)
+        # If signals are not provided, calculate them
+        if signals is None:
+            signals, _ = calculate_signals(data)
         
         if 'buy_signals' in signals and signals['buy_signals'].iloc[-5:].any():
             status = "BUY"
@@ -93,7 +95,13 @@ def render_live_trading_tab(data):
                     st.error(msg)
     
     # Display chart
-    signals, data_with_indicators = calculate_signals(data)
+    # Use signals if provided, otherwise calculate them
+    if signals is None:
+        signals, data_with_indicators = calculate_signals(data)
+    else:
+        # Even if signals are provided, we need data_with_indicators for the chart
+        # So we'll create a copy and add any indicators that might be used in plotting
+        data_with_indicators = data.copy()
     
     # Add sentiment analysis display
     if 'combined_signal' in signals:
