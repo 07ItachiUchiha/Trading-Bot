@@ -8,7 +8,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-# Import from trading bot modules
+# Import necessary modules
 from utils.telegram_alert import send_alert
 from utils.discord_webhook import send_discord_alert
 from utils.slack_webhook import send_slack_alert
@@ -25,6 +25,11 @@ from .database import get_trades_from_db, add_trade_to_db, update_trade_in_db
 def render_live_trading_tab(data, signals=None):
     """Render the Live Trading tab content with strategy signals"""
     st.subheader("Live Trading")
+    
+    # Safety check for data
+    if data is None or len(data) < 2:
+        st.error("Insufficient data to display trading interface")
+        return
     
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
@@ -94,14 +99,14 @@ def render_live_trading_tab(data, signals=None):
                 else:
                     st.error(msg)
     
-    # Display chart
     # Use signals if provided, otherwise calculate them
     if signals is None:
         signals, data_with_indicators = calculate_signals(data)
+        # Create a copy to avoid modifying input data
+        chart_data = data_with_indicators
     else:
-        # Even if signals are provided, we need data_with_indicators for the chart
-        # So we'll create a copy and add any indicators that might be used in plotting
-        data_with_indicators = data.copy()
+        # Use input data for chart
+        chart_data = data
     
     # Add sentiment analysis display
     if 'combined_signal' in signals:
@@ -144,7 +149,7 @@ def render_live_trading_tab(data, signals=None):
                 </div>
                 """, unsafe_allow_html=True)
     
-    chart = plot_candlestick_chart(data_with_indicators, signals)
+    chart = plot_candlestick_chart(chart_data, signals)
     st.plotly_chart(chart, use_container_width=True)
     
     # Trading interface
@@ -205,25 +210,26 @@ def render_live_trading_tab(data, signals=None):
         
         if st.button("Open Position"):
             trade_data = {
-                'symbol': st.session_state.symbol,
+                'symbol': st.session_state.get('symbol', 'UNKNOWN'),
                 'direction': direction,
                 'entry_price': entry_price,
                 'stop_loss': stop_price,
                 'targets': [target1, target2, target3],
                 'size': position_size,
-                'entry_time': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),  # Use consistent datetime format
+                'entry_time': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 'status': 'open'
             }
             
             add_trade_to_db(trade_data)
             
             # Send alerts if enabled
-            if "Telegram" in st.session_state.notification_options:
-                send_alert(f"New trade opened: {direction} {st.session_state.symbol} at {entry_price}")
-            if "Discord" in st.session_state.notification_options:
-                send_discord_alert(f"New trade opened: {direction} {st.session_state.symbol} at {entry_price}")
-            if "Slack" in st.session_state.notification_options:
-                send_slack_alert(f"New trade opened: {direction} {st.session_state.symbol} at {entry_price}")
+            notification_options = st.session_state.get('notification_options', ['Console'])
+            if "Telegram" in notification_options:
+                send_alert(f"New trade opened: {direction} {trade_data['symbol']} at {entry_price}")
+            if "Discord" in notification_options:
+                send_discord_alert(f"New trade opened: {direction} {trade_data['symbol']} at {entry_price}")
+            if "Slack" in notification_options:
+                send_slack_alert(f"New trade opened: {direction} {trade_data['symbol']} at {entry_price}")
             
             st.success(f"{direction.capitalize()} position opened at {entry_price}")
     
@@ -232,6 +238,10 @@ def render_live_trading_tab(data, signals=None):
         
         # Get open trades from database
         trades_df = get_trades_from_db()
+        if trades_df is None or trades_df.empty:
+            st.info("No open positions to close")
+            return
+        
         open_trades = trades_df[trades_df['status'] == 'open']
         
         if open_trades.empty:
@@ -269,7 +279,7 @@ def render_live_trading_tab(data, signals=None):
                 
                 if st.button("Close Position"):
                     exit_data = {
-                        'exit_time': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),  # Use consistent datetime format
+                        'exit_time': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         'exit_price': exit_price,
                         'pnl': pnl,
                         'status': 'closed'
@@ -278,11 +288,12 @@ def render_live_trading_tab(data, signals=None):
                     update_trade_in_db(selected_trade_id, exit_data)
                     
                     # Send alerts if enabled
-                    if "Telegram" in st.session_state.notification_options:
+                    notification_options = st.session_state.get('notification_options', ['Console'])
+                    if "Telegram" in notification_options:
                         send_alert(f"Trade closed: {selected_trade['direction']} {selected_trade['symbol']} with PNL: ${pnl:.2f}")
-                    if "Discord" in st.session_state.notification_options:
+                    if "Discord" in notification_options:
                         send_discord_alert(f"Trade closed: {selected_trade['direction']} {selected_trade['symbol']} with PNL: ${pnl:.2f}")
-                    if "Slack" in st.session_state.notification_options:
+                    if "Slack" in notification_options:
                         send_slack_alert(f"Trade closed: {selected_trade['direction']} {selected_trade['symbol']} with PNL: ${pnl:.2f}")
                     
                     st.success(f"Position closed with PNL: ${pnl:.2f}")

@@ -89,92 +89,63 @@ def fetch_historical_data(symbol, interval, limit=100, provider='alpaca'):
 def fetch_alpaca_data(symbol, interval, limit=100):
     """Fetch historical price data from Alpaca"""
     try:
-        # Initialize connection to Alpaca, try both paper and live URLs
+        # Initialize connection to Alpaca with more robust handling
+        api = None
         try:
+            # Try paper trading API first
             api = tradeapi.REST(API_KEY, API_SECRET, base_url='https://paper-api.alpaca.markets')
-            # Test connection
-            account = api.get_account()
-            print(f"Connected to Alpaca Paper API: {account.status}")
+            api.get_account()  # Test connection
         except Exception as e:
-            print(f"Failed to connect to Alpaca Paper API: {e}")
+            # Fall back to live API if paper fails
             try:
-                # Try live API as fallback
                 api = tradeapi.REST(API_KEY, API_SECRET, base_url='https://api.alpaca.markets')
-                account = api.get_account()
-                print(f"Connected to Alpaca Live API: {account.status}")
+                api.get_account()
             except Exception as e2:
-                print(f"Failed to connect to Alpaca Live API: {e2}")
-                raise e2
+                # Both APIs failed
+                raise Exception(f"Failed to connect to Alpaca API: {str(e2)}")
         
-        # Map Streamlit interval options to Alpaca timeframe format
+        # Map interval to Alpaca timeframe format
         timeframe_dict = {
-            '1m': '1Min',
-            '3m': '3Min', 
-            '5m': '5Min',
-            '15m': '15Min',
-            '30m': '30Min',
-            '1h': '1Hour',
-            '2h': '2Hour',
-            '4h': '4Hour',
-            '6h': '6Hour', 
-            '12h': '12Hour',
+            '1m': '1Min', '3m': '3Min', '5m': '5Min', '15m': '15Min', '30m': '30Min',
+            '1h': '1Hour', '2h': '2Hour', '4h': '4Hour', '6h': '6Hour', '12h': '12Hour',
             '1d': '1Day'
         }
         alpaca_timeframe = timeframe_dict.get(interval, '1Hour')
         
-        # Calculate time period based on limit and interval
+        # Calculate time range
         end_date = datetime.now()
-        
-        # Convert interval to minutes for calculating start date
         interval_mins = {
             '1m': 1, '3m': 3, '5m': 5, '15m': 15, '30m': 30,
-            '1h': 60, '2h': 120, '4h': 240, '6h': 360, '12h': 720,
-            '1d': 1440
+            '1h': 60, '2h': 120, '4h': 240, '6h': 360, '12h': 720, '1d': 1440
         }
         minutes = interval_mins.get(interval, 60) * limit
         start_date = end_date - timedelta(minutes=minutes)
         
-        # Fix: Ensure dates are in the past (not future)
-        if start_date > end_date or end_date > datetime.now():
-            end_date = datetime.now()
-            start_date = end_date - timedelta(minutes=minutes)
+        # Format symbol and fetch data
+        api_symbol = symbol.replace('/', '')
+        bars = api.get_crypto_bars(
+            api_symbol,
+            alpaca_timeframe,
+            start=start_date.strftime('%Y-%m-%d'),
+            end=end_date.strftime('%Y-%m-%d')
+        ).df
         
-        # Try to get actual market data, handle properly formatted symbols
-        try:
-            # Format symbol for API request
-            api_symbol = symbol.replace('/', '')
+        if not bars.empty:
+            df = bars.reset_index().rename(columns={
+                'timestamp': 'time',
+                'open': 'open',
+                'high': 'high',
+                'low': 'low',
+                'close': 'close',
+                'volume': 'volume'
+            })
+            return df
             
-            # Get historical data
-            bars = api.get_crypto_bars(
-                api_symbol,
-                alpaca_timeframe,
-                start=start_date.strftime('%Y-%m-%d'),
-                end=end_date.strftime('%Y-%m-%d')
-            ).df
-            
-            if not bars.empty:
-                # Convert to expected format
-                df = bars.reset_index()
-                df = df.rename(columns={
-                    'timestamp': 'time',
-                    'open': 'open',
-                    'high': 'high',
-                    'low': 'low',
-                    'close': 'close',
-                    'volume': 'volume'
-                })
-                return df
-        except Exception as e:
-            print(f"Error fetching actual data from Alpaca: {e}")
-            # Fall through to demo data generation
-        
-        # Generate demo data if API failed or returned empty result
-        print("Generating demo data for Alpaca")
+        # Fall back to demo data if we got empty results
         return generate_demo_data(symbol, interval, limit, start_date, end_date)
         
     except Exception as e:
-        st.error(f"Error fetching data from Alpaca: {e}")
-        print(f"Detailed error when fetching data: {traceback.format_exc()}")
+        print(f"Error fetching Alpaca data: {e}")
         return generate_demo_data(symbol, interval, limit)
 
 def fetch_binance_data(symbol, interval, limit=100):
@@ -345,70 +316,71 @@ def calculate_ema(close_prices, length=50):
 
 def calculate_signals(df):
     """Calculate trading signals from price data including sentiment analysis"""
+    # Safety check for input data
+    if df is None or len(df) < 20:  # Need at least 20 candles for most indicators
+        return {
+            'buy_signals': pd.Series(False, index=range(len(df) if df is not None else 0)),
+            'sell_signals': pd.Series(False, index=range(len(df) if df is not None else 0)),
+            'combined_signal': {'signal': 'neutral', 'confidence': 0, 'reasoning': 'Insufficient data'}
+        }, df
+    
     # Initialize analyzers
     initialize_analyzers()
     
     # Copy dataframe to avoid modifying original
     data = df.copy(deep=True)
     
-    # Calculate Bollinger Bands
+    # Calculate indicators
+    signals = {}
     upper_band, middle_band, lower_band = calculate_bollinger_bands(data['close'], length=20)
-    signals = {
-        'upper_band': upper_band,
-        'middle_band': middle_band,
-        'lower_band': lower_band
-    }
+    signals['upper_band'] = upper_band
+    signals['middle_band'] = middle_band
+    signals['lower_band'] = lower_band
     
-    # Calculate EMAs - use proper assignment with loc to avoid SettingWithCopyWarning
-    data.loc[:, 'ema50'] = calculate_ema(data['close'], length=50)
-    data.loc[:, 'ema200'] = calculate_ema(data['close'], length=200)
+    # Calculate EMAs
+    data['ema50'] = calculate_ema(data['close'], length=50)
+    data['ema200'] = calculate_ema(data['close'], length=200)
     
     # Detect consolidation and breakout
     try:
         consolidation, bb_width, atr = detect_consolidation(data)
         buy_signals, sell_signals = detect_breakout(data, consolidation, bb_width)
-        
-        if buy_signals is not None:
-            signals['buy_signals'] = buy_signals
-        
-        if sell_signals is not None:
-            signals['sell_signals'] = sell_signals
+        signals['buy_signals'] = buy_signals
+        signals['sell_signals'] = sell_signals
     except Exception as e:
-        print(f"Error detecting consolidation/breakout: {e}")
-        # Create empty signals if the detection fails
+        # Create empty signals if detection fails
         signals['buy_signals'] = pd.Series(False, index=data.index)
         signals['sell_signals'] = pd.Series(False, index=data.index)
     
     # Add RSI
-    data.loc[:, 'rsi'] = calculate_rsi(data['close'])
+    data['rsi'] = calculate_rsi(data['close'])
     signals['rsi'] = data['rsi']
     
-    # Generate technical signal
+    # Generate combined signal
     technical_signal = {
         'signal': 'neutral',
         'confidence': 0.0,
-        'reasoning': ''
+        'reasoning': 'No clear signal'
     }
     
-    # Look at most recent buy/sell signals
-    recent_buys = signals['buy_signals'].iloc[-5:].any() if 'buy_signals' in signals else False
-    recent_sells = signals['sell_signals'].iloc[-5:].any() if 'sell_signals' in signals else False
+    # Check recent buy/sell signals
+    recent_buys = signals['buy_signals'].iloc[-5:].any()
+    recent_sells = signals['sell_signals'].iloc[-5:].any()
     
-    if recent_buys:
+    if recent_buys and not recent_sells:
         technical_signal['signal'] = 'buy'
         technical_signal['confidence'] = 0.7
         technical_signal['reasoning'] = 'Breakout detected'
-    elif recent_sells:
+    elif recent_sells and not recent_buys:
         technical_signal['signal'] = 'sell'
         technical_signal['confidence'] = 0.7
         technical_signal['reasoning'] = 'Breakdown detected'
     
-    # If we have a symbol in session state, try to get sentiment
+    # Add sentiment if available
     sentiment_signal = None
-    if 'symbol' in st.session_state:
-        symbol = st.session_state.symbol
+    if 'symbol' in st.session_state and sentiment_analyzer:
         try:
-            sentiment = sentiment_analyzer.get_sentiment(symbol)
+            sentiment = sentiment_analyzer.get_sentiment(st.session_state.symbol)
             if sentiment:
                 sentiment_signal = {
                     'signal': sentiment['signal'],
@@ -417,21 +389,17 @@ def calculate_signals(df):
                     'news_count': sentiment['news_count'],
                     'source_count': sentiment.get('source_count', 0)
                 }
-        except Exception as e:
-            st.error(f"Error analyzing sentiment: {e}")
+        except Exception:
+            pass
     
-    # Combine signals
+    # Combine signals or use technical signal
     if signal_processor and sentiment_signal:
-        combined_signal = signal_processor.process_signals(
+        signals['combined_signal'] = signal_processor.process_signals(
             symbol=st.session_state.get('symbol', 'unknown'),
             technical_signal=technical_signal,
             sentiment_signal=sentiment_signal
         )
-        
-        # Store the combined signal in the signals dictionary
-        signals['combined_signal'] = combined_signal
     else:
-        # If we don't have sentiment, just use the technical signal
         signals['combined_signal'] = technical_signal
     
     return signals, data
