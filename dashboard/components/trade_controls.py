@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import time
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 from pathlib import Path
 import sys
@@ -25,9 +25,9 @@ pending_orders = {}
 order_updates = {}
 trade_lock = threading.RLock()
 
-def execute_trade(symbol, action, quantity, price=None, order_type="market"):
+def execute_trade(symbol, action, quantity, price=None, order_type="market", risk_settings=None):
     """
-    Execute a buy or sell trade
+    Execute a buy or sell trade with risk management
     
     Args:
         symbol (str): Trading symbol (e.g., 'BTC/USD')
@@ -35,6 +35,7 @@ def execute_trade(symbol, action, quantity, price=None, order_type="market"):
         quantity (float): Trade quantity
         price (float, optional): Limit price (for limit orders)
         order_type (str): Type of order ('market', 'limit')
+        risk_settings (dict): Risk management settings
     
     Returns:
         dict: Trade result with status and details
@@ -56,13 +57,10 @@ def execute_trade(symbol, action, quantity, price=None, order_type="market"):
     order_id = str(uuid.uuid4())
     
     try:
-        # Check if we have enough balance for this trade
-        # In a real implementation, this would check actual account balances
-        
         # For demo purposes, we'll simulate trades with a slight delay
         trade_thread = threading.Thread(
             target=_process_trade_simulation,
-            args=(order_id, symbol, action, quantity, price, order_type)
+            args=(order_id, symbol, action, quantity, price, order_type, risk_settings)
         )
         trade_thread.daemon = True
         trade_thread.start()
@@ -152,8 +150,8 @@ def _calculate_pnl(symbol, action, quantity, executed_price):
         print(f"Error calculating PnL: {e}")
         return 0.0
 
-def _process_trade_simulation(order_id, symbol, action, quantity, price, order_type):
-    """Simulate trade processing with a realistic delay"""
+def _process_trade_simulation(order_id, symbol, action, quantity, price, order_type, risk_settings=None):
+    """Simulate trade processing with risk management"""
     global pending_orders, order_updates
     
     with trade_lock:
@@ -186,20 +184,31 @@ def _process_trade_simulation(order_id, symbol, action, quantity, price, order_t
     if _is_closing_trade(symbol, action, quantity):
         pnl = _calculate_pnl(symbol, action, quantity, executed_price)
     
-    # Record the completed order
+    # Record the completed order with risk management details
     with trade_lock:
         order_result = {
-            "id": order_id,  # Use "id" instead of "order_id" for consistency
+            "id": order_id,
             "symbol": symbol,
             "action": action,
-            "size": quantity,  # Use "size" instead of "quantity" for consistency
-            "price": executed_price,  # Use "price" instead of "executed_price" for consistency
+            "size": quantity,
+            "price": executed_price,
             "requested_price": price,
             "order_type": order_type,
             "status": "completed",
             "timestamp": datetime.now().isoformat(),
             "pnl": pnl
         }
+        
+        # Add risk management details if provided
+        if risk_settings:
+            order_result["stop_loss"] = risk_settings.get("stop_loss")
+            order_result["take_profit"] = risk_settings.get("take_profit")
+            order_result["trailing_stop"] = risk_settings.get("use_trailing_stop")
+            order_result["time_exit"] = risk_settings.get("use_time_exit")
+            
+            if risk_settings.get("use_time_exit"):
+                exit_time = datetime.now() + timedelta(hours=risk_settings.get("exit_hours", 24))
+                order_result["exit_time"] = exit_time.isoformat()
         
         # Update the order status
         pending_orders[order_id]["status"] = "completed"
@@ -470,6 +479,9 @@ def display_trade_controls(symbol=None, default_quantity=None):
         # Skip balance display if error
         pass
     
+    # Get risk settings from session state
+    risk_settings = st.session_state.get("risk_settings", None)
+    
     # Trade Input Form
     with st.form(key="trade_form"):
         col1, col2 = st.columns(2)
@@ -518,6 +530,19 @@ def display_trade_controls(symbol=None, default_quantity=None):
                     help="Enter the limit price"
                 )
         
+        # Show recommended position size if available
+        if risk_settings:
+            recommended_size = risk_settings['position_size'] / _get_current_price(symbol)
+            st.caption(f"Recommended size: {recommended_size:.4f} based on risk analysis")
+            
+        # Add stop loss and take profit details if available
+        if risk_settings:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.caption(f"🛑 Stop Loss: ${risk_settings['stop_loss']:.2f}")
+            with col2:
+                st.caption(f"🎯 Take Profit: ${risk_settings['take_profit']:.2f}")
+        
         # Action buttons
         col1, col2 = st.columns(2)
         
@@ -540,13 +565,14 @@ def display_trade_controls(symbol=None, default_quantity=None):
     if buy_submitted or sell_submitted:
         action = "buy" if buy_submitted else "sell"
         
-        # Execute the trade
+        # Execute the trade with risk settings
         result = execute_trade(
             symbol=symbol,
             action=action,
             quantity=quantity,
             price=price if order_type == "Limit" else None,
-            order_type=order_type.lower()
+            order_type=order_type.lower(),
+            risk_settings=risk_settings
         )
         
         # Show the result

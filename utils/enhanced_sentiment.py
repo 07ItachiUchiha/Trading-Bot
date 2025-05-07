@@ -66,7 +66,7 @@ class EnhancedSentimentAnalyzer:
         self.news_lock = threading.Lock()
     
     def fetch_news(self, symbol, days_back=3):
-        """Fetch news for a specific symbol from multiple sources"""
+        """Fetch news for a specific symbol from multiple sources with improved integration"""
         results = []
         
         # Remove USD suffix if present (for crypto)
@@ -87,27 +87,40 @@ class EnhancedSentimentAnalyzer:
                     news_data = response.json()
                     if news_data['status'] == 'ok' and len(news_data['articles']) > 0:
                         for article in news_data['articles']:
-                            results.append({
-                                'title': article['title'],
-                                'description': article['description'],
-                                'content': article['content'],
-                                'source': article['source']['name'],
-                                'published_at': article['publishedAt'],
-                                'url': article['url']
-                            })
+                            # Filter out irrelevant articles with better keyword matching
+                            title = article['title'].lower()
+                            if search_term.lower() in title or any(related in title for related in self._get_related_terms(search_term)):
+                                results.append({
+                                    'title': article['title'],
+                                    'description': article.get('description', ''),
+                                    'content': article.get('content', ''),
+                                    'source': article['source']['name'],
+                                    'published_at': article['publishedAt'],
+                                    'url': article['url'],
+                                    'relevance': 0.9 if search_term.lower() in title else 0.7  # Add relevance score
+                                })
             except Exception as e:
                 self.logger.error(f"Error fetching news from News API: {e}")
         
-        # Try Alpha Vantage
+        # Try Alpha Vantage with improved parameters
         if self.api_keys['alphavantage']:
             try:
-                url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={search_term}&apikey={self.api_keys['alphavantage']}"
+                # Use both ticker and name search for better results
+                url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={search_term}&topics=earnings,financial_markets,technology,economy_macro,finance&limit=50&apikey={self.api_keys['alphavantage']}"
                 response = requests.get(url)
                 
                 if response.status_code == 200:
                     data = response.json()
                     if 'feed' in data:
                         for item in data['feed']:
+                            # Calculate relevance based on sentiment certainty and matching
+                            relevance = 0.6
+                            if 'ticker_sentiment' in item:
+                                for ticker_sent in item['ticker_sentiment']:
+                                    if ticker_sent['ticker'].upper() == search_term.upper():
+                                        relevance = float(ticker_sent.get('relevance_score', 0.6))
+                                        break
+                            
                             results.append({
                                 'title': item['title'],
                                 'description': item.get('summary', ''),
@@ -115,12 +128,14 @@ class EnhancedSentimentAnalyzer:
                                 'source': item['source'],
                                 'published_at': item['time_published'],
                                 'url': item['url'],
-                                'sentiment_score': item.get('overall_sentiment_score', None)
+                                'sentiment_score': item.get('overall_sentiment_score', None),
+                                'sentiment_label': item.get('overall_sentiment_label', None),
+                                'relevance': relevance
                             })
             except Exception as e:
                 self.logger.error(f"Error fetching news from Alpha Vantage: {e}")
         
-        # Try Finnhub
+        # Try Finnhub with improved parameters
         if self.api_keys['finnhub']:
             try:
                 today = datetime.now()
@@ -133,79 +148,103 @@ class EnhancedSentimentAnalyzer:
                 if response.status_code == 200:
                     data = response.json()
                     for item in data:
-                        results.append({
-                            'title': item['headline'],
-                            'description': item.get('summary', ''),
-                            'content': item.get('summary', ''),
-                            'source': item['source'],
-                            'published_at': datetime.fromtimestamp(item['datetime']).isoformat(),
-                            'url': item['url']
-                        })
+                        # Filter by relevance - Finnhub sometimes returns loosely related news
+                        if search_term.lower() in item['headline'].lower() or search_term.lower() in item.get('summary', '').lower():
+                            results.append({
+                                'title': item['headline'],
+                                'description': item.get('summary', ''),
+                                'content': item.get('summary', ''),
+                                'source': item['source'],
+                                'published_at': datetime.fromtimestamp(item['datetime']).isoformat(),
+                                'url': item['url'],
+                                'relevance': 0.8 if search_term.lower() in item['headline'].lower() else 0.6
+                            })
             except Exception as e:
                 self.logger.error(f"Error fetching news from Finnhub: {e}")
+        
+        # Try additional API: Tiingo for further sentiment enhancement
+        if self.api_keys.get('tiingo'):
+            try:
+                headers = {'Authorization': f"Token {self.api_keys['tiingo']}"}
+                url = f"https://api.tiingo.com/tiingo/news?tickers={search_term}&startDate={(datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')}"
+                response = requests.get(url, headers=headers)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    for item in data:
+                        results.append({
+                            'title': item['title'],
+                            'description': item['description'],
+                            'content': item['description'],
+                            'source': item.get('source', 'Tiingo'),
+                            'published_at': item['publishedDate'],
+                            'url': item['url'],
+                            'relevance': 0.8,
+                            'tags': item.get('tags', [])
+                        })
+            except Exception as e:
+                self.logger.error(f"Error fetching news from Tiingo: {e}")
         
         # If no news from APIs, generate mock news for testing
         if not results:
             results = self._generate_mock_news(symbol)
+        else:
+            # Sort by relevance and recency - prioritize relevant recent news
+            results = sorted(results, 
+                             key=lambda x: (x.get('relevance', 0.5), 
+                                           self._get_recency_weight(x.get('published_at'))),
+                             reverse=True)
+            
+            # Keep only the top 25 most relevant news items
+            results = results[:25]
             
         return results
-    
-    def _generate_mock_news(self, symbol):
-        """Generate mock news articles for testing when APIs fail"""
-        mock_news = []
-        today = datetime.now()
+
+    def _get_recency_weight(self, published_at_str):
+        """Calculate recency weight with better time handling"""
+        if not published_at_str:
+            return 0.5
+            
+        try:
+            if isinstance(published_at_str, str):
+                # Handle various date formats
+                published_at_str = published_at_str.replace('Z', '+00:00')
+                published_at = datetime.fromisoformat(published_at_str)
+            else:
+                published_at = published_at_str
+                
+            # Calculate days since publication
+            days_old = (datetime.now() - published_at).total_seconds() / 86400
+            
+            # More sophisticated decay function: exponential decay with 3-day half-life
+            weight = 2 ** (-days_old / 3.0)
+            return max(0.2, min(1.0, weight))
+            
+        except Exception:
+            return 0.5
+
+    def _get_related_terms(self, symbol):
+        """Get related search terms for better news matching"""
+        # Map of symbols to related terms
+        symbol_map = {
+            'BTC': ['bitcoin', 'crypto', 'cryptocurrency', 'digital currency', 'btc'],
+            'ETH': ['ethereum', 'crypto', 'defi', 'smart contract', 'eth', 'ether'],
+            'SOL': ['solana', 'crypto', 'sol'],
+            'ADA': ['cardano', 'crypto', 'ada'],
+            'DOGE': ['dogecoin', 'crypto', 'doge', 'meme coin'],
+            'AAPL': ['apple', 'iphone', 'mac', 'tech stock'],
+            'MSFT': ['microsoft', 'windows', 'tech stock', 'azure', 'office'],
+            'GOOGL': ['google', 'alphabet', 'tech stock', 'search engine'],
+            'AMZN': ['amazon', 'e-commerce', 'aws', 'cloud'],
+        }
         
-        # Define sentiment conditions based on time of day for testing
-        hour = today.hour
-        if hour < 12:  # Morning - bullish sentiment
-            sentiment = "positive"
-        else:  # Afternoon/evening - bearish sentiment
-            sentiment = "negative"
-            
-        search_term = symbol.replace('/USD', '')
-        if search_term.endswith('USD'):
-            search_term = search_term[:-3]
-            
-        # Generate mock articles with appropriate sentiment
-        if sentiment == "positive":
-            headlines = [
-                f"{search_term} poised for growth amid positive market trends",
-                f"Analysts upgrade {search_term}, citing strong fundamentals",
-                f"New developments could boost {search_term} price, experts say"
-            ]
-            
-            content = [
-                f"Market analysts are bullish on {search_term} following recent developments. Technical indicators suggest a potential breakout.",
-                f"Several major investment firms have upgraded their outlook on {search_term}, citing improved market conditions and strong growth potential.",
-                f"Recent developments in the {search_term} ecosystem point to increased adoption and value, according to industry experts."
-            ]
-        else:
-            headlines = [
-                f"{search_term} faces pressure as markets remain uncertain",
-                f"Analysts cautious on {search_term} amid broader market concerns",
-                f"Regulatory challenges could impact {search_term}, report suggests"
-            ]
-            
-            content = [
-                f"Market sentiment has turned bearish on {search_term} as broader economic concerns impact investment outlook.",
-                f"Several analysts have expressed caution regarding {search_term}, citing potential market volatility and uncertain growth prospects.",
-                f"Emerging regulatory challenges could pose risks for {search_term} in the coming months, according to industry observers."
-            ]
-            
-        # Create mock news items
-        for i in range(len(headlines)):
-            pub_date = today - timedelta(hours=i*6)  # Space out the articles
-            mock_news.append({
-                'title': headlines[i],
-                'description': content[i][:100] + "...",
-                'content': content[i],
-                'source': 'Mock Financial News',
-                'published_at': pub_date.isoformat(),
-                'url': '#'
-            })
-            
-        return mock_news
-    
+        # Strip USD or other suffixes
+        clean_symbol = symbol.replace('/USD', '').upper()
+        if clean_symbol.endswith('USD'):
+            clean_symbol = clean_symbol[:-3]
+        
+        return symbol_map.get(clean_symbol, [clean_symbol.lower()])
+
     def analyze_sentiment(self, symbol, news_items=None, days_back=3):
         """
         Analyze sentiment for a symbol based on recent news
@@ -454,3 +493,21 @@ class EnhancedSentimentAnalyzer:
             for symbol in symbols:
                 if symbol in self.sentiment_history:
                     self.analyze_sentiment(symbol, days_back=1)
+
+if __name__ == "__main__":
+    # Example usage
+    api_keys = {
+        'newsapi': 'your_newsapi_key',
+        'alphavantage': 'your_alphavantage_key',
+        'finnhub': 'your_finnhub_key',
+        'tiingo': 'your_tiingo_key'
+    }
+    
+    analyzer = EnhancedSentimentAnalyzer(api_keys)
+    
+    # Fetch and analyze news for a specific symbol
+    symbol = "AAPL"
+    news = analyzer.fetch_news(symbol)
+    sentiment = analyzer.analyze_sentiment(symbol, news)
+    
+    print(json.dumps(sentiment, indent=2))
