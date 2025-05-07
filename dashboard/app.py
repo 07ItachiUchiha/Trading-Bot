@@ -1,18 +1,22 @@
 import streamlit as st
-import sys
-from pathlib import Path
-import os
-import datetime
 
-# Add parent directory to path
-sys.path.append(str(Path(__file__).parent.parent))
-
-# Set page config at the very beginning - must be the first Streamlit command
+# This MUST be the first Streamlit command in the app
 st.set_page_config(
     page_title="Trading Bot Dashboard",
     page_icon="📈",
     layout="wide"
 )
+
+# All other imports and code should come after this line
+import pandas as pd
+import numpy as np
+import os
+import sys
+from pathlib import Path
+import datetime
+
+# Add parent directory to path
+sys.path.append(str(Path(__file__).parent.parent))
 
 # Import from components
 from components.auth import authenticate

@@ -206,6 +206,10 @@ def _process_trade_simulation(order_id, symbol, action, quantity, price, order_t
             order_result["trailing_stop"] = risk_settings.get("use_trailing_stop")
             order_result["time_exit"] = risk_settings.get("use_time_exit")
             
+            # NEW: Add max loss exit settings
+            order_result["use_max_loss_exit"] = risk_settings.get("use_max_loss_exit")
+            order_result["max_loss_percent"] = risk_settings.get("max_loss_percent")
+            
             if risk_settings.get("use_time_exit"):
                 exit_time = datetime.now() + timedelta(hours=risk_settings.get("exit_hours", 24))
                 order_result["exit_time"] = exit_time.isoformat()

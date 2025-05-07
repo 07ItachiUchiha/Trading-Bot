@@ -13,6 +13,7 @@ class PositionMonitor:
     - Take profit hits
     - Trailing stops
     - Time-based exits
+    - Max loss exits (new)
     """
     def __init__(self):
         self._monitor_thread = None
@@ -121,6 +122,21 @@ class PositionMonitor:
                 if datetime.now() >= exit_time:
                     self._close_position(pos_id, current_price, 'time_exit')
                     continue
+            
+            # NEW: Check for max loss exit condition
+            if pos_data.get('use_max_loss_exit', False) and pos_data.get('max_loss_percent', 0) > 0:
+                entry_price = pos_data.get('entry_price', 0)
+                if entry_price > 0:
+                    # Calculate current loss percentage
+                    if pos_data['direction'] == 'long':
+                        loss_percent = (entry_price - current_price) / entry_price * 100
+                    else:  # short
+                        loss_percent = (current_price - entry_price) / entry_price * 100
+                    
+                    # If loss exceeds threshold, close the position
+                    if loss_percent >= pos_data['max_loss_percent']:
+                        self._close_position(pos_id, current_price, 'max_loss_exit')
+                        continue
         
         # Clean up closed positions
         for pos_id in positions_to_close:
@@ -226,6 +242,7 @@ def display_position_monitor():
     • **Take Profit**: Exits when price hits your profit target
     • **Trailing Stop**: Dynamically adjusts stop loss as price moves in your favor
     • **Time Exit**: Automatically exits positions after specified time period
+    • **Max Loss Exit**: Automatically closes positions that reach your maximum allowed loss
     
     Start monitoring to enable these automated risk management features.
     """)

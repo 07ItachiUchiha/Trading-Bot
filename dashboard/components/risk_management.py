@@ -292,6 +292,20 @@ def display_risk_management_controls(symbol, account_balance=10000, confidence=0
                     step=0.5,
                     help="Distance of trailing stop from highest price"
                 )
+                
+            # NEW: Maximum loss exit settings
+            use_max_loss_exit = st.checkbox("Auto-Close on Loss", value=False,
+                                         help="Automatically close position if loss reaches threshold")
+            if use_max_loss_exit:
+                max_loss_percent = st.slider(
+                    "Max Loss %", 
+                    min_value=1.0, 
+                    max_value=15.0, 
+                    value=5.0, 
+                    step=0.5,
+                    help="Maximum loss percentage before automatically closing position"
+                )
+                
         with col2:
             # Time-based exit
             use_time_exit = st.checkbox("Time-Based Exit", value=False,
@@ -304,7 +318,7 @@ def display_risk_management_controls(symbol, account_balance=10000, confidence=0
                     value=24,
                     help="Exit position after this many hours if target not reached"
                 )
-                
+    
     # Return the risk settings
     return {
         "position_size": position_info['position_size'],
@@ -313,5 +327,8 @@ def display_risk_management_controls(symbol, account_balance=10000, confidence=0
         "use_trailing_stop": use_trailing_stop if 'use_trailing_stop' in locals() else False,
         "trailing_stop_percentage": trail_percentage if 'trail_percentage' in locals() else 2.0,
         "use_time_exit": use_time_exit if 'use_time_exit' in locals() else False,
-        "exit_hours": exit_hours if 'exit_hours' in locals() else 24
+        "exit_hours": exit_hours if 'exit_hours' in locals() else 24,
+        # NEW: Include max loss exit settings
+        "use_max_loss_exit": use_max_loss_exit if 'use_max_loss_exit' in locals() else False,
+        "max_loss_percent": max_loss_percent if 'max_loss_percent' in locals() else 5.0
     }

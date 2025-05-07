@@ -9,6 +9,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from dashboard.components.trade_controls import display_trade_controls
 from dashboard.components.market_data import display_market_data
 from dashboard.components.risk_management import display_risk_management_controls
+from dashboard.components.position_monitor import display_position_monitor
 from dashboard.components.wallet import load_account_data
 
 def main():
@@ -21,7 +22,7 @@ def main():
     symbol = st.session_state.get('symbol', 'BTC/USD')
     
     # Create a tab layout for better organization
-    tab1, tab2 = st.tabs(["Trading Dashboard", "Risk Management"])
+    tab1, tab2, tab3 = st.tabs(["Trading Dashboard", "Risk Management", "Position Monitor"])
     
     with tab1:
         col1, col2 = st.columns([2, 1])
@@ -48,6 +49,10 @@ def main():
         
         # Store risk settings in session state for use by trade execution
         st.session_state.risk_settings = risk_settings
+        
+    with tab3:
+        # Display position monitoring controls
+        display_position_monitor()
     
     # Display additional information
     with st.expander("About Manual Trading"):
@@ -68,6 +73,7 @@ def main():
         - Trailing stops to lock in profits
         - Time-based exits for non-performing positions
         - Correlation protection to avoid overexposure
+        - Auto-close for losing positions
         
         Make informed trading decisions based on technical and fundamental analysis.
         """)
