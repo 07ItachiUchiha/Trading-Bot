@@ -6,31 +6,31 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 # Import components
-from dashboard.components.pnl_visualization import display_pnl_chart
+from dashboard.components.pnl_visualization import display_pnl_visualization
+from dashboard.components.trade_stats import display_trade_stats
 
-# Set page config
-st.set_page_config(
-    page_title="Trading Bot - PnL Analysis",
-    page_icon="📊",
-    layout="wide"
-)
-
-# Display page content
-st.title("📈 PnL Analysis")
-st.write("View and analyze your trading performance over time.")
-
-# Display PnL chart
-display_pnl_chart()
-
-# Additional information
-with st.expander("About PnL Analysis"):
-    st.write("""
-    This page shows your Profit and Loss (PnL) performance over time. You can:
+def display_pnl_analysis_page():
+    """Display the PnL analysis page"""
+    st.title("💰 Profit and Loss Analysis")
+    st.write("Analyze your trading performance and profitability metrics.")
     
-    * View cumulative PnL as a line chart
-    * See separate buy/sell markers
-    * Aggregate PnL by day
-    * Analyze summary statistics
+    # Display PnL visualization
+    display_pnl_visualization()
     
-    Use this information to evaluate your trading strategy performance and identify areas for improvement.
-    """)
+    # Display trade stats
+    display_trade_stats()
+    
+    # Additional content goes here...
+
+# This allows the file to be run directly or imported
+if __name__ == "__main__":
+    # Only set page config when running the file directly
+    st.set_page_config(
+        page_title="Trading Bot - PnL Analysis",
+        page_icon="💰",
+        layout="wide"
+    )
+    display_pnl_analysis_page()
+else:
+    # When imported, just call the display function without setting page config
+    main = display_pnl_analysis_page

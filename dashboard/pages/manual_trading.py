@@ -12,7 +12,7 @@ from dashboard.components.risk_management import display_risk_management_control
 from dashboard.components.position_monitor import display_position_monitor
 from dashboard.components.wallet import load_account_data
 
-def main():
+def display_manual_trading():
     """Display the manual trading page"""
     st.title("📈 Manual Trading")
     st.write("Execute manual trades based on market data and trading signals.")
@@ -80,10 +80,14 @@ def main():
 
 # This allows the file to be run directly or imported
 if __name__ == "__main__":
-    # If run directly, set page config here
+    # Only set page config when running the file directly
     st.set_page_config(
         page_title="Trading Bot - Manual Trading",
         page_icon="📊",
         layout="wide"
     )
-    main()
+    display_manual_trading()
+else:
+    # When imported, just call the display function without setting page config
+    # This function can be called by app.py
+    main = display_manual_trading
