@@ -177,62 +177,99 @@ def render_live_trading_tab(data, signals=None):
             key="manual_stop_distance"
         )
         
-        # Calculate position size
-        if trade_direction == "Long":
-            direction = "long"
-            stop_price = entry_price * (1 - stop_distance / 100)
-        else:
-            direction = "short"
-            stop_price = entry_price * (1 + stop_distance / 100)
-        
-        risk_amount = CAPITAL * risk_percent / 100
-        position_size = risk_amount / abs(entry_price - stop_price)
-        
-        st.info(f"Position Size: {position_size:.4f}")
+        # Calculate position size with validation
+        try:
+            if trade_direction == "Long":
+                direction = "long"
+                stop_price = entry_price * (1 - stop_distance / 100)
+            else:
+                direction = "short"
+                stop_price = entry_price * (1 + stop_distance / 100)
+            
+            # Validate entry and stop prices
+            if entry_price <= 0:
+                st.error("Entry price must be greater than zero")
+                position_size = 0
+            elif abs(entry_price - stop_price) < 0.0001:
+                st.error("Stop price is too close to entry price")
+                position_size = 0
+            else:
+                risk_amount = CAPITAL * risk_percent / 100
+                position_size = risk_amount / abs(entry_price - stop_price)
+                
+            st.info(f"Position Size: {position_size:.4f}")
+        except Exception as e:
+            st.error(f"Error calculating position size: {str(e)}")
+            position_size = 0
         
         # Calculate profit targets
-        if trade_direction == "Long":
-            target1 = entry_price * (1 + stop_distance / 100)
-            target2 = entry_price * (1 + stop_distance / 100 * 1.5)
-            target3 = entry_price * (1 + stop_distance / 100 * 2)
-        else:
-            target1 = entry_price * (1 - stop_distance / 100)
-            target2 = entry_price * (1 - stop_distance / 100 * 1.5)
-            target3 = entry_price * (1 - stop_distance / 100 * 2)
-        
-        col_tp1, col_tp2, col_tp3 = st.columns(3)
-        with col_tp1:
-            st.metric("Target 1", f"{target1:.2f}")
-        with col_tp2:
-            st.metric("Target 2", f"{target2:.2f}")
-        with col_tp3:
-            st.metric("Target 3", f"{target3:.2f}")
+        try:
+            if trade_direction == "Long":
+                target1 = entry_price * (1 + stop_distance / 100)
+                target2 = entry_price * (1 + stop_distance / 100 * 1.5)
+                target3 = entry_price * (1 + stop_distance / 100 * 2)
+            else:
+                target1 = entry_price * (1 - stop_distance / 100)
+                target2 = entry_price * (1 - stop_distance / 100 * 1.5)
+                target3 = entry_price * (1 - stop_distance / 100 * 2)
+            
+            col_tp1, col_tp2, col_tp3 = st.columns(3)
+            with col_tp1:
+                st.metric("Target 1", f"{target1:.2f}")
+            with col_tp2:
+                st.metric("Target 2", f"{target2:.2f}")
+            with col_tp3:
+                st.metric("Target 3", f"{target3:.2f}")
+        except Exception as e:
+            st.error(f"Error calculating targets: {str(e)}")
         
         if st.button("Open Position"):
-            trade_data = {
-                'symbol': st.session_state.get('symbol', 'UNKNOWN'),
-                'direction': direction,
-                'entry_price': entry_price,
-                'stop_loss': stop_price,
-                'targets': [target1, target2, target3],
-                'size': position_size,
-                'entry_time': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                'status': 'open'
-            }
-            
-            add_trade_to_db(trade_data)
-            
-            # Send alerts if enabled
-            notification_options = st.session_state.get('notification_options', ['Console'])
-            if "Telegram" in notification_options:
-                send_alert(f"New trade opened: {direction} {trade_data['symbol']} at {entry_price}")
-            if "Discord" in notification_options:
-                send_discord_alert(f"New trade opened: {direction} {trade_data['symbol']} at {entry_price}")
-            if "Slack" in notification_options:
-                send_slack_alert(f"New trade opened: {direction} {trade_data['symbol']} at {entry_price}")
-            
-            st.success(f"{direction.capitalize()} position opened at {entry_price}")
-    
+            if position_size <= 0:
+                st.error("Invalid position size. Please check your inputs.")
+                return
+                
+            try:
+                # Format the entry time as a string to avoid datetime serialization issues
+                current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                trade_data = {
+                    'symbol': st.session_state.get('symbol', 'UNKNOWN'),
+                    'direction': direction,
+                    'entry_price': float(entry_price),  # Ensure proper type
+                    'stop_loss': float(stop_price),     # Ensure proper type
+                    'targets': [float(target1), float(target2), float(target3)],  # Ensure proper type
+                    'size': float(position_size),       # Ensure proper type
+                    'entry_time': current_time,
+                    'status': 'open'
+                }
+                
+                # Debug information
+                st.write(f"Adding trade: {trade_data['symbol']} {direction} at {entry_price}")
+                
+                # Add trade to database
+                success = add_trade_to_db(trade_data)
+                
+                if success:
+                    # Send alerts if enabled
+                    notification_options = st.session_state.get('notification_options', ['Console'])
+                    if "Telegram" in notification_options:
+                        send_alert(f"New trade opened: {direction} {trade_data['symbol']} at {entry_price}")
+                    if "Discord" in notification_options:
+                        send_discord_alert(f"New trade opened: {direction} {trade_data['symbol']} at {entry_price}")
+                    if "Slack" in notification_options:
+                        send_slack_alert(f"New trade opened: {direction} {trade_data['symbol']} at {entry_price}")
+                    
+                    st.success(f"{direction.capitalize()} position opened at {entry_price}")
+                    
+                    # Force a rerun to refresh the UI and show the new trade
+                    st.rerun()
+                else:
+                    st.error("Failed to add trade to database")
+            except Exception as e:
+                st.error(f"Error opening position: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
+
     with col2:
         st.subheader("Close Position")
         

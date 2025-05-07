@@ -556,13 +556,26 @@ def plot_candlestick_chart(df, signals=None):
     return fig
 
 def calculate_pnl(entry_price, exit_price, direction, size):
-    """Calculate profit/loss for a trade"""
-    if direction == 'long':
-        pnl = (exit_price - entry_price) * size
-    else:  # short
-        pnl = (entry_price - exit_price) * size
-    
-    return pnl
+    """Calculate profit/loss for a trade with validation"""
+    try:
+        # Validate inputs
+        entry_price = float(entry_price)
+        exit_price = float(exit_price)
+        size = float(size)
+        
+        if entry_price <= 0 or exit_price <= 0 or size <= 0:
+            print(f"Warning: Invalid values for PnL calculation: entry={entry_price}, exit={exit_price}, size={size}")
+            return 0.0
+            
+        if direction == 'long':
+            pnl = (exit_price - entry_price) * size
+        else:  # short
+            pnl = (entry_price - exit_price) * size
+        
+        return pnl
+    except Exception as e:
+        print(f"Error calculating PnL: {e}")
+        return 0.0
 
 # Auto trading functions
 def start_auto_trader(symbols, timeframe, capital, risk_percent, profit_target, daily_profit_target, 
