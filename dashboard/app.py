@@ -271,6 +271,7 @@ def display_trading_dashboard():
     tab1, tab2, tab3, tab4 = st.tabs(["Live Trading", "Trade History", "Performance", "Settings"])
     
     with tab1:
+        # Pass both data and signals to render_live_trading_tab
         render_live_trading_tab(data, signals)
     
     with tab2:
