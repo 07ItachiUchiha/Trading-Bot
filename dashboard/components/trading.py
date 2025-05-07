@@ -661,6 +661,6 @@ def get_auto_trader_status():
 
 # Force a rerun periodically to refresh the UI
 if not hasattr(st.session_state, 'last_rerun') or \
-   (datetime.datetime.now() - st.session_state.last_rerun).total_seconds() > 5:
-    st.session_state.last_rerun = datetime.datetime.now()
+   (datetime.now() - st.session_state.last_rerun).total_seconds() > 5:
+    st.session_state.last_rerun = datetime.now()
     st.rerun()
