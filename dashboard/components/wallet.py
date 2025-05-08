@@ -105,7 +105,7 @@ def refresh_account_data():
 
 def display_wallet():
     """Display wallet and account information"""
-    st.header("💰 Wallet & Account")
+    st.header("Wallet & Account")
     
     # Check if we need to refresh data (every 30 seconds)
     if ('account_last_refresh' not in st.session_state or 

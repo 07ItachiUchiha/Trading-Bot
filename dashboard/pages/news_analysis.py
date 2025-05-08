@@ -18,7 +18,7 @@ if __name__ == "__main__":
     )
 
     # Display page content
-    st.title("📰 News Trading Analysis")
+    st.title(" News Trading Analysis")
     st.write("Analyze news sentiment and get trading recommendations based on market sentiment.")
 
     # Display symbol selector

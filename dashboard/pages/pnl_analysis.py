@@ -16,7 +16,7 @@ st.set_page_config(
 )
 
 # Display page content
-st.title("📈 PnL Analysis")
+st.title(" PnL Analysis")
 st.write("View and analyze your trading performance over time.")
 
 # Display PnL chart

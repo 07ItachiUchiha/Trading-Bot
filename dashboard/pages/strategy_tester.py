@@ -62,7 +62,7 @@ def main():
         
         # Display execution status
         if live_execution:
-            st.success("✅ Live execution is enabled for this strategy")
+            st.success("Live execution is enabled for this strategy")
             
             with st.expander("Live Execution Settings"):
                 col1, col2 = st.columns(2)
@@ -90,7 +90,7 @@ def main():
                     }
                     st.success("Execution settings confirmed and saved!")
         else:
-            st.info("ℹ️ Live execution is disabled for this strategy")
+            st.info("Live execution is disabled for this strategy")
 
     except Exception as e:
         st.error(f"Error: {e}")

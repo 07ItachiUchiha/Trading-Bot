@@ -16,7 +16,7 @@ st.set_page_config(
 )
 
 # Display page content
-st.title("🔍 Trade History")
+st.title(" Trade History")
 st.write("Review, filter and analyze your trading history.")
 
 # Display trade filtering system

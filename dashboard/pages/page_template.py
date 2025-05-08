@@ -5,12 +5,6 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-# REMOVE THIS - Don't set page config at the top level:
-# st.set_page_config(
-#     page_title="Trading Bot - Page Name",
-#     page_icon="📊",
-#     layout="wide"
-# )
 
 def display_page():
     """Display the page content"""

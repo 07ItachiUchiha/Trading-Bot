@@ -83,7 +83,7 @@ if __name__ == "__main__":
     # If run directly, set page config here
     st.set_page_config(
         page_title="Trading Bot - Manual Trading",
-        page_icon="📊",
+        page_icon="📈",
         layout="wide"
     )
     main()
