@@ -446,29 +446,27 @@ class MarketDataManager:
         df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
         df['ema200'] = df['close'].ewm(span=200, adjust=False).mean()
         
-        # Calculate RSI
+        # RSI calculation
         delta = df['close'].diff()
-        gain = delta.where(delta > 0, 0).fillna(0)
-        loss = -delta.where(delta < 0, 0).fillna(0)
-        
-        avg_gain = gain.rolling(window=14).mean()
-        avg_loss = loss.rolling(window=14).mean()
-        
-        rs = avg_gain / avg_loss.replace(0, 0.00001)  # Avoid division by zero
+        gain = np.where(delta > 0, delta, 0)
+        loss = np.where(delta < 0, -delta, 0)
+        avg_gain = pd.Series(gain).rolling(window=14, min_periods=1).mean()
+        avg_loss = pd.Series(loss).rolling(winsdow=14, min_periods=1).mean()
+        rs = avg_gain / (avg_loss + 1e-10)  # Avoid division by zero
         df['rsi'] = 100 - (100 / (1 + rs))
-        
-        # Calculate Bollinger Bands
-        df['middle_band'] = df['close'].rolling(window=20).mean()
-        df['std'] = df['close'].rolling(window=20).std()
-        df['upper_band'] = df['middle_band'] + (df['std'] * 2)
-        df['lower_band'] = df['middle_band'] - (df['std'] * 2)
-        df['bb_width'] = (df['upper_band'] - df['lower_band']) / df['middle_band']
-        
-        # Calculate MACD
-        df['macd_line'] = df['close'].ewm(span=12, adjust=False).mean() - df['close'].ewm(span=26, adjust=False).mean()
+
+        # Bollinger Bands
+        rolling_mean = df['close'].rolling(window=20)
+        rolling_std = rolling_mean.std()
+        df['upper_band'] = rolling_mean.mean() + (rolling_std * 2)
+        df['lower_band'] = rolling_mean.mean() - (rolling_std * 2)
+
+        # MACD
+        ema12 = df['close'].ewm(span=12, adjust=False).mean()
+        ema26 = df['close'].ewm(span=26, adjust=False).mean()
+        df['macd_line'] = ema12 - ema26
         df['macd_signal'] = df['macd_line'].ewm(span=9, adjust=False).mean()
-        df['macd_histogram'] = df['macd_line'] - df['macd_signal']
-        
+
         # Calculate ATR
         high_low = df['high'] - df['low']
         high_close = (df['high'] - df['close'].shift()).abs()

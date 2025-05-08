@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 import pandas as pd
 import plotly.graph_objects as go
+import numpy as np
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -326,7 +327,7 @@ def display_strategy_performance(strategy_name, data, signals):
         st.line_chart(performance['equity_curve'])
 
 def simulate_strategy(data, signals):
-    """Simulate strategy performance based on signals"""
+    """Simulate strategy performance based on signals with optimized calculations."""
     if 'buy_signals' not in signals or 'sell_signals' not in signals:
         return {
             'total_return': 0.0,
@@ -335,64 +336,30 @@ def simulate_strategy(data, signals):
             'trade_count': 0,
             'equity_curve': pd.DataFrame()
         }
-    
+
     df = data.copy()
     buy_signals = signals['buy_signals']
     sell_signals = signals['sell_signals']
-    
-    # Initialize trading variables
-    in_position = False
-    entry_price = 0
-    trades = []
-    equity = 100.0  # Starting equity as percentage
-    equity_curve = []
-    
-    # Simulate trading
-    for i in range(1, len(df)):
-        equity_curve.append(equity)
-        
-        if not in_position and buy_signals.iloc[i-1]:
-            # Enter long position
-            entry_price = df['close'].iloc[i]
-            in_position = True
-            
-        elif in_position and sell_signals.iloc[i-1]:
-            # Exit position
-            exit_price = df['close'].iloc[i]
-            profit_pct = (exit_price - entry_price) / entry_price * 100
-            trades.append(profit_pct)
-            equity *= (1 + profit_pct/100)
-            in_position = False
-    
-    # Close final position if still open
-    if in_position:
-        exit_price = df['close'].iloc[-1]
-        profit_pct = (exit_price - entry_price) / entry_price * 100
-        trades.append(profit_pct)
-        equity *= (1 + profit_pct/100)
-    
+
+    # Vectorized calculation of trades
+    buy_prices = df['close'][buy_signals].values
+    sell_prices = df['close'][sell_signals].values[:len(buy_prices)]  # Ensure matching lengths
+    profits = (sell_prices - buy_prices) / buy_prices * 100
+
     # Calculate performance metrics
-    if trades:
-        win_trades = [t for t in trades if t > 0]
-        loss_trades = [t for t in trades if t <= 0]
-        
-        win_rate = len(win_trades) / len(trades) * 100 if trades else 0
-        profit_factor = abs(sum(win_trades) / sum(loss_trades)) if sum(loss_trades) != 0 else float('inf')
-        total_return = equity - 100.0
-    else:
-        win_rate = 0
-        profit_factor = 0
-        total_return = 0
-    
-    # Create equity curve DataFrame
-    equity_df = pd.DataFrame({
-        'equity': equity_curve
-    })
-    
+    win_trades = profits[profits > 0]
+    loss_trades = profits[profits <= 0]
+    win_rate = len(win_trades) / len(profits) * 100 if len(profits) > 0 else 0
+    profit_factor = abs(win_trades.sum() / loss_trades.sum()) if loss_trades.sum() != 0 else float('inf')
+    total_return = profits.sum()
+
+    # Create equity curve
+    equity_curve = pd.DataFrame({'equity': 100 + np.cumsum(profits)})
+
     return {
         'total_return': total_return,
         'win_rate': win_rate,
         'profit_factor': profit_factor,
-        'trade_count': len(trades),
-        'equity_curve': equity_df
+        'trade_count': len(profits),
+        'equity_curve': equity_curve
     }

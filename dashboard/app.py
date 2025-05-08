@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit as st  # Streamlit's caching is available directly from the st module
 
 # This MUST be the first Streamlit command in the app
 st.set_page_config(
@@ -95,6 +95,10 @@ def handle_real_time_update(data):
                    (datetime.datetime.now() - st.session_state.last_rerun).total_seconds() > 5:
                     st.session_state.last_rerun = datetime.datetime.now()
                     st.rerun()
+
+@st.cache_data(ttl=600)  # Cache data for 10 minutes
+def fetch_cached_historical_data(symbol, interval, limit, provider):
+    return fetch_historical_data(symbol, interval, limit, provider)
 
 def main():
     """Main function to run the dashboard"""
@@ -269,7 +273,8 @@ def display_strategy_tester():
     # Fetch historical data
     try:
         with st.spinner("Fetching market data..."):
-            data = fetch_historical_data(symbol, interval, limit, provider)
+            # Use cached function to fetch data
+            data = fetch_cached_historical_data(symbol, interval, limit, provider)
         
         # Display strategy selector
         strategy_name, signals, live_execution = display_strategy_selector(data)
