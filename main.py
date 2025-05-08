@@ -22,6 +22,7 @@ from utils.risk_management import calculate_position_size, manage_open_position
 from utils.telegram_alert import send_alert
 from config import API_KEY, API_SECRET, CAPITAL, RISK_PERCENT, MAX_CAPITAL_PER_TRADE
 from config import NEWS_API_KEY, ALPHAVANTAGE_API_KEY, FINNHUB_API_KEY  # Import API keys for news
+from utils.llm_integration import get_llm_response
 
 class VolatilityBreakoutBot:
     def __init__(self, symbol='BTCUSDT', timeframe='1h', capital=CAPITAL, risk_percent=RISK_PERCENT, 
@@ -287,6 +288,22 @@ class VolatilityBreakoutBot:
             print(f"Error executing trade: {e}")
             traceback.print_exc()
             return False
+    
+    def analyze_market_with_llm(self, market_data):
+        """
+        Get LLM analysis of current market conditions
+        """
+        prompt = f"""Analyze these market conditions and suggest trading strategy:
+        
+        {market_data}
+        
+        Provide recommendations in this format:
+        1. Primary trend: ...
+        2. Key indicators: ...
+        3. Recommended action: ...
+        4. Risk considerations: ..."""
+        
+        return get_llm_response(prompt, self.llm_model)
     
     def run(self):
         """Main bot execution loop"""

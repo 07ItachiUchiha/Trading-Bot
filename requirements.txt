@@ -37,3 +37,5 @@ flask>=2.0.0
 pytest>=6.2.5
 black>=21.9b0
 pylint>=2.10.2
+
+openrouter
