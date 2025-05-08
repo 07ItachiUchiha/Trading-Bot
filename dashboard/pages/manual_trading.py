@@ -14,7 +14,7 @@ from dashboard.components.wallet import load_account_data
 
 def main():
     """Display the manual trading page"""
-    st.title("📈 Manual Trading")
+    st.title(" Manual Trading")
     st.write("Execute manual trades based on market data and trading signals.")
     
     # Get account data and symbol from session state

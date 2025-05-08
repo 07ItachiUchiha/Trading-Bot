@@ -43,7 +43,7 @@ def display_correlation_matrix(symbols=None):
     
     # Display warnings for high correlations
     if high_correlations:
-        st.warning("⚠️ High Asset Correlations Detected")
+        st.warning("High Asset Correlations Detected")
         for sym1, sym2, corr in high_correlations:
             st.write(f"**{sym1}** and **{sym2}** have a correlation of **{corr:.2f}**")
         
@@ -53,7 +53,7 @@ def display_correlation_matrix(symbols=None):
         This could amplify both gains and losses.
         """)
     else:
-        st.success("✅ No concerning correlations detected between assets")
+        st.success("No concerning correlations detected between assets")
         
     # Display risk diversification recommendations
     st.subheader("Portfolio Diversification")

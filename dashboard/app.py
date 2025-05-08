@@ -109,7 +109,7 @@ def main():
     authenticate()
     
     # Main page layout
-    st.title("🚀 Trading Bot Dashboard")
+    st.title("Trading Bot Dashboard")
     
     # Initialize session state variables
     if "update_signals" not in st.session_state:
@@ -127,7 +127,7 @@ def main():
         st.session_state.data_provider = data_provider
             
         # Symbol selection
-        st.sidebar.title("📊 Market Selection")
+        st.sidebar.title("Market Selection")
         symbol = st.sidebar.text_input("Symbol", value="BTCUSD", key="sidebar_symbol")
         timeframe = st.sidebar.selectbox(
             "Timeframe",
@@ -289,7 +289,7 @@ def display_strategy_tester():
         
         # Display execution status
         if live_execution:
-            st.success("✅ Live execution is enabled for this strategy")
+            st.success(" Live execution is enabled for this strategy")
             
             with st.expander("Live Execution Settings"):
                 col1, col2 = st.columns(2)
@@ -317,7 +317,7 @@ def display_strategy_tester():
                     }
                     st.success("Execution settings confirmed and saved!")
         else:
-            st.info("ℹ️ Live execution is disabled for this strategy")
+            st.info(" Live execution is disabled for this strategy")
 
     except Exception as e:
         st.error(f"Error: {e}")
@@ -342,9 +342,9 @@ def display_trading_dashboard():
         
         # Show status of selected strategy
         if live_execution:
-            st.success(f"✅ {strategy_name.replace('_', ' ').title()} strategy is active for manual trading")
+            st.success(f" {strategy_name.replace('_', ' ').title()} strategy is active for manual trading")
         else:
-            st.warning(f"⚠️ {strategy_name.replace('_', ' ').title()} strategy is in monitoring mode only")
+            st.warning(f" {strategy_name.replace('_', ' ').title()} strategy is in monitoring mode only")
     
     with col2:
         # Display quick account summary or other relevant info
