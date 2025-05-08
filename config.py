@@ -89,4 +89,4 @@ for directory in [EXPORTS_DIR, DATA_DIR, LOGS_DIR]:
 
 # LLM Configuration
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
-LLM_MODEL = os.getenv('LLM_MODEL', 'meta-llama/llama-3-8b-instruct')  # Default model
+LLM_MODEL = os.getenv('LLM_MODEL', 'meta-llama/llama-4-maverick:free')  # Default model
