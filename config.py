@@ -88,5 +88,5 @@ for directory in [EXPORTS_DIR, DATA_DIR, LOGS_DIR]:
     os.makedirs(directory, exist_ok=True)
 
 # LLM Configuration
-OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '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')
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
 LLM_MODEL = os.getenv('LLM_MODEL', 'meta-llama/llama-3-8b-instruct')  # Default model
