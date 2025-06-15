@@ -5,6 +5,7 @@ from pathlib import Path
 import streamlit as st
 import traceback
 import threading
+import logging
 import plotly.graph_objects as go
 import alpaca_trade_api as tradeapi
 from datetime import datetime, timedelta
@@ -123,6 +124,38 @@ def fetch_alpaca_data(symbol, interval, limit=100):
         
         # Format symbol and fetch data
         api_symbol = symbol.replace('/', '')
+        
+        # Special handling for XAU/USD (Gold)
+        if 'XAU' in symbol:
+            # For gold, we might need to use a different endpoint or symbol
+            # Check if Alpaca supports it directly
+            try:
+                bars = api.get_bars(
+                    symbol="GOLD", # Some brokers use "GOLD" or "XAUUSD"
+                    timeframe=alpaca_timeframe,
+                    start=start_date.strftime('%Y-%m-%d'),
+                    end=end_date.strftime('%Y-%m-%d')
+                ).df
+                
+                if not bars.empty:
+                    df = bars.reset_index().rename(columns={
+                        'timestamp': 'time',
+                        'open': 'open',
+                        'high': 'high',
+                        'low': 'low',
+                        'close': 'close',
+                        'volume': 'volume'
+                    })
+                    return df
+            except Exception:
+                print("Could not fetch XAU/USD data directly from Alpaca, trying alternatives")
+                logging.warning("Could not fetch XAU/USD data directly from Alpaca, trying alternatives")
+                pass
+                
+            # If we reached here, the direct gold fetch failed, use mock data
+            return generate_demo_data(symbol, interval, limit, start_date, end_date)
+        
+        # Normal symbol processing for crypto/stocks
         bars = api.get_crypto_bars(
             api_symbol,
             alpaca_timeframe,
@@ -425,132 +458,149 @@ def calculate_rsi(close_prices, length=14):
     
     return rsi
 
+def fetch_historical_data_by_days(symbol, timeframe='1h', days=30):
+    """Fetch historical market data for the given symbol and timeframe"""
+    import logging
+    from datetime import datetime, timedelta
+    
+    # Ensure proper handling of XAU/USD
+    if symbol in ["XAU/USD", "GOLD/USD", "GOLD"]:
+        # Try to import the XAU handler
+        try:
+            from dashboard.xau_handler import generate_mock_xau_data
+            return generate_mock_xau_data(timeframe, int(days * 24))  # Approximate number of bars
+        except ImportError:
+            logging.warning("XAU handler not available, falling back to mock data")
+            # Continue to general mock data generation
+    
+    # Calculate time range
+    end_date = datetime.now()
+    minutes = {
+        '1m': 1, '3m': 3, '5m': 5, '15m': 15, '30m': 30,
+        '1h': 60, '2h': 120, '4h': 240, '6h': 360, '12h': 720, '1d': 1440
+    }.get(timeframe, 60) * days * 24  # Convert days to minutes
+    start_date = end_date - timedelta(minutes=minutes)
+    
+    # Generate mock data
+    return generate_demo_data(symbol, timeframe, limit=days*24, start_date=start_date, end_date=end_date)
+
 def plot_candlestick_chart(df, signals=None):
-    """Plot interactive candlestick chart with indicators"""
+    """Plot interactive candlestick chart with indicators - TradingView style"""
+    import plotly.graph_objects as go
+    
+    if df is None or len(df) < 2:
+        # Create empty figure with a message if no data
+        fig = go.Figure()
+        fig.update_layout(
+            title="No data available",
+            annotations=[{
+                "text": "No market data available",
+                "xref": "paper",
+                "yref": "paper",
+                "showarrow": False,
+                "font": {"size": 20}
+            }]
+        )
+        return fig
+    
+    # Create figure with secondary y-axis
     fig = go.Figure()
     
-    # Add candlestick chart
+    # Add candlestick chart with improved TradingView styling
     fig.add_trace(go.Candlestick(
-        x=df['time'],
+        x=df['time'] if 'time' in df.columns else df.index,
         open=df['open'],
         high=df['high'],
         low=df['low'],
         close=df['close'],
-        name='Candlestick'
+        name='Price',
+        increasing_line_color='#26a69a',  # TradingView green
+        decreasing_line_color='#ef5350',  # TradingView red
+        increasing_fillcolor='#26a69a',
+        decreasing_fillcolor='#ef5350'
     ))
     
-    # Add EMA indicators if available
-    if 'ema50' in df.columns and 'ema200' in df.columns:
-        fig.add_trace(go.Scatter(
-            x=df['time'],
-            y=df['ema50'],
-            line=dict(color='blue', width=1),
-            name='EMA 50'
-        ))
-        
-        fig.add_trace(go.Scatter(
-            x=df['time'],
-            y=df['ema200'],
-            line=dict(color='red', width=1),
-            name='EMA 200'
-        ))
+    # Add volume as a bar chart at the bottom
+    colors = ['#26a69a' if row['close'] >= row['open'] else '#ef5350' for _, row in df.iterrows()]
     
-    # Add Bollinger Bands if signals is provided
-    if signals is not None and 'upper_band' in signals and 'middle_band' in signals and 'lower_band' in signals:
-        fig.add_trace(go.Scatter(
-            x=df['time'],
-            y=signals['upper_band'],
-            line=dict(color='rgba(250, 120, 120, 0.5)', width=1),
-            name='Upper BB'
-        ))
-        
-        fig.add_trace(go.Scatter(
-            x=df['time'],
-            y=signals['middle_band'],
-            line=dict(color='rgba(120, 120, 250, 0.5)', width=1),
-            name='Middle BB'
-        ))
-        
-        fig.add_trace(go.Scatter(
-            x=df['time'],
-            y=signals['lower_band'],
-            line=dict(color='rgba(120, 250, 120, 0.5)', width=1),
-            name='Lower BB'
-        ))
-        
-        # Add buy/sell signals
-        if 'buy_signals' in signals:
-            buy_indices = signals['buy_signals'][signals['buy_signals']].index
-            if not buy_indices.empty:
-                buy_times = df.loc[buy_indices, 'time']
-                buy_prices = df.loc[buy_indices, 'low'] * 0.99  # Slightly below the candle
-                
-                fig.add_trace(go.Scatter(
-                    x=buy_times,
-                    y=buy_prices,
-                    mode='markers',
-                    marker=dict(symbol='triangle-up', size=15, color='green'),
-                    name='Buy Signal'
-                ))
-            
-        if 'sell_signals' in signals:
-            sell_indices = signals['sell_signals'][signals['sell_signals']].index
-            if not sell_indices.empty:
-                sell_times = df.loc[sell_indices, 'time']
-                sell_prices = df.loc[sell_indices, 'high'] * 1.01  # Slightly above the candle
-                
-                fig.add_trace(go.Scatter(
-                    x=sell_times,
-                    y=sell_prices,
-                    mode='markers',
-                    marker=dict(symbol='triangle-down', size=15, color='red'),
-                    name='Sell Signal'
-                ))
+    fig.add_trace(go.Bar(
+        x=df['time'] if 'time' in df.columns else df.index,
+        y=df['volume'],
+        name='Volume',
+        marker_color=colors,
+        marker_line_width=0,
+        opacity=0.5,
+        yaxis='y2'
+    ))
     
-    # Add RSI subplot if available
-    if signals is not None and 'rsi' in signals:
-        fig.add_trace(go.Scatter(
-            x=df['time'],
-            y=signals['rsi'],
-            line=dict(color='purple', width=1),
-            name='RSI',
-            yaxis="y2"
-        ))
-        
-        # Add RSI reference lines (30 and 70)
-        fig.add_shape(
-            type="line",
-            x0=df['time'].iloc[0],
-            y0=30,
-            x1=df['time'].iloc[-1],
-            y1=30,
-            line=dict(color="rgba(255, 0, 0, 0.5)", width=1, dash="dash"),
-            yref="y2"
-        )
-        
-        fig.add_shape(
-            type="line",
-            x0=df['time'].iloc[0],
-            y0=70,
-            x1=df['time'].iloc[-1],
-            y1=70,
-            line=dict(color="rgba(255, 0, 0, 0.5)", width=1, dash="dash"),
-            yref="y2"
-        )
-    
-    # Update layout for secondary y-axis
+    # Update layout for TradingView style
     fig.update_layout(
-        title='Price Chart with Indicators',
-        xaxis_title='Time',
-        yaxis_title='Price',
-        xaxis_rangeslider_visible=False,
-        height=600,
-        yaxis2=dict(
-            title="RSI",
-            overlaying="y",
-            side="right",
-            range=[0, 100]
+        margin=dict(l=0, r=0, t=30, b=0),
+        paper_bgcolor='rgb(19,23,34)',  # Dark background like TradingView
+        plot_bgcolor='rgb(19,23,34)',
+        font=dict(color='rgb(200,200,200)'),  # Light text for dark background
+        xaxis=dict(
+            gridcolor='rgba(152, 152, 152, 0.1)',
+            showgrid=True,
+            zeroline=False,
+            rangeslider=dict(visible=False),
         ),
+        yaxis=dict(
+            gridcolor='rgba(152, 152, 152, 0.1)',
+            showgrid=True,
+            zeroline=False,
+            side='right',
+            tickformat=',.2f',
+        ),
+        # Volume y-axis at the bottom 20% of the chart
+        yaxis2=dict(
+            title='Volume',
+            domain=[0, 0.2],
+            showgrid=False,
+            fixedrange=True,
+        ),
+        xaxis_domain=[0, 0.99],
+        yaxis_domain=[0.25, 1],  # Main chart takes 75% of height
+        legend=dict(
+            orientation="h",
+            y=1.02,
+            xanchor="left",
+            x=0,
+            font=dict(size=10),
+            bgcolor='rgba(19,23,34,0.7)',
+        ),
+        hovermode='x unified',
+        dragmode='zoom',  # Enable zoom by default like TradingView
+        height=600,  # Larger chart for better visualization
+    )
+
+    # Add grid patterns for better visibility
+    fig.update_xaxes(
+        showline=True,
+        linewidth=1,
+        linecolor='rgba(152, 152, 152, 0.2)',
+        showspikes=True,  # Show spikes for better time reading
+        spikemode='across',
+        spikesnap='cursor',
+        spikecolor='rgba(152, 152, 152, 0.8)',
+        spikedash='dot'
+    )
+    
+    fig.update_yaxes(
+        showline=True,
+        linewidth=1,
+        linecolor='rgba(152, 152, 152, 0.2)',
+    )
+    
+    # Add crosshair cursor for TradingView feel
+    fig.update_layout(
+        xaxis=dict(
+            showspikes=True,
+            spikecolor='rgba(152, 152, 152, 0.8)',
+            spikesnap='cursor',
+            spikemode='across',
+            spikedash='solid'
+        )
     )
     
     return fig
@@ -577,7 +627,6 @@ def calculate_pnl(entry_price, exit_price, direction, size):
         print(f"Error calculating PnL: {e}")
         return 0.0
 
-# Auto trading functions
 def start_auto_trader(symbols, timeframe, capital, risk_percent, profit_target, daily_profit_target, 
                      use_news=True, news_weight=0.5, use_earnings=True, earnings_weight=0.6):
     """Start the auto trader in a background thread"""
@@ -629,8 +678,8 @@ def start_auto_trader(symbols, timeframe, capital, risk_percent, profit_target, 
         # Create and start the thread
         auto_trader_thread = threading.Thread(target=run_trader, daemon=True)
         auto_trader_thread.start()
-        auto_trader_running = True
         
+        auto_trader_running = True
         return True, "Auto trader started successfully"
     except Exception as e:
         error_msg = f"Failed to start auto trader: {str(e)}"

@@ -187,7 +187,13 @@ class EnhancedSentimentAnalyzer:
         
         # If no news from APIs, generate mock news for testing
         if not results:
-            results = self._generate_mock_news(symbol)
+            self.logger.info(f"No API results found for {symbol}, generating mock news")
+            try:
+                results = self._generate_mock_news(symbol)
+            except AttributeError:
+                # Fallback if method missing (should not happen with this fix)
+                self.logger.error(f"_generate_mock_news method not found, using emergency fallback for {symbol}")
+                results = self._emergency_mock_news(symbol)
         else:
             # Sort by relevance and recency - prioritize relevant recent news
             results = sorted(results, 
@@ -494,6 +500,196 @@ class EnhancedSentimentAnalyzer:
                 if symbol in self.sentiment_history:
                     self.analyze_sentiment(symbol, days_back=1)
 
+    def _generate_mock_news(self, symbol):
+        """Generate realistic mock news data for when API calls fail"""
+        import random
+        from datetime import datetime, timedelta
+        import logging
+        
+        logging.info(f"Generating mock news for {symbol}")
+        
+        # Current time for reference
+        now = datetime.now()
+        
+        # Prepare mock news items
+        mock_news = []
+        
+        # Number of mock news to generate
+        num_items = random.randint(5, 15)
+        
+        # Common sources
+        sources = [
+            "Bloomberg", "Reuters", "CNBC", "Financial Times", "Wall Street Journal",
+            "MarketWatch", "Yahoo Finance", "Investing.com", "Benzinga", "Forbes"
+        ]
+        
+        # Symbol-specific news templates
+        news_templates = {
+            "BTC": [
+                {"title": "Bitcoin Surges Above $TARGET_PRICE as Institutional Interest Grows", "sentiment": "positive"},
+                {"title": "Bitcoin Drops Below $TARGET_PRICE Amid Market Volatility", "sentiment": "negative"},
+                {"title": "Crypto Analysts Predict Bitcoin to Reach $TARGET_PRICE by Year End", "sentiment": "positive"},
+                {"title": "Bitcoin Trading Sideways Around $TARGET_PRICE", "sentiment": "neutral"},
+                {"title": "Major Investment Firm Adds Bitcoin to Portfolio", "sentiment": "positive"},
+                {"title": "Regulatory Concerns Push Bitcoin Price Down", "sentiment": "negative"},
+                {"title": "Bitcoin Mining Difficulty Increases", "sentiment": "neutral"},
+                {"title": "New ETF Approval Boosts Bitcoin", "sentiment": "positive"},
+            ],
+            "ETH": [
+                {"title": "Ethereum Breaks $TARGET_PRICE as Upgrade Nears", "sentiment": "positive"},
+                {"title": "Ethereum Falls Below $TARGET_PRICE Support Level", "sentiment": "negative"},
+                {"title": "Ethereum Gas Fees Hit New Low", "sentiment": "positive"},
+                {"title": "Developers Delay Ethereum Upgrade", "sentiment": "negative"},
+                {"title": "Ethereum Staking Growth Accelerates", "sentiment": "positive"},
+                {"title": "ETH/BTC Ratio Approaching Key Level", "sentiment": "neutral"},
+            ],
+            "SOL": [
+                {"title": "Solana Network Activity Hits All-Time High", "sentiment": "positive"},
+                {"title": "Solana Experiences Network Outage", "sentiment": "negative"},
+                {"title": "New Projects Choosing Solana Over Competitors", "sentiment": "positive"},
+                {"title": "Solana Price Stabilizes Around $TARGET_PRICE", "sentiment": "neutral"},
+                {"title": "Major Exchange Adds New Solana Trading Pairs", "sentiment": "positive"},
+            ],
+            "XAU": [
+                {"title": "Gold Prices Rally as Inflation Fears Mount", "sentiment": "positive"},
+                {"title": "Gold Retreats from $TARGET_PRICE on Strong Dollar", "sentiment": "negative"},
+                {"title": "Central Banks Increase Gold Reserves", "sentiment": "positive"},
+                {"title": "Gold Holds Steady Around $TARGET_PRICE", "sentiment": "neutral"},
+                {"title": "Geopolitical Tensions Boost Safe Haven Demand for Gold", "sentiment": "positive"},
+                {"title": "Rising Treasury Yields Pressure Gold Prices", "sentiment": "negative"},
+                {"title": "Gold Mining Stocks Outperform Physical Gold", "sentiment": "positive"},
+                {"title": "Technical Analysis: Gold Set for Breakout Above $TARGET_PRICE", "sentiment": "positive"},
+            ]
+        }
+        
+        # Extract the base symbol (remove /USD, etc.)
+        base_symbol = symbol.split('/')[0] if '/' in symbol else symbol
+        
+        # Use the matching templates or generic if not found
+        templates = news_templates.get(base_symbol, [
+            {"title": f"{base_symbol} Price Analysis: Bulls Target $TARGET_PRICE", "sentiment": "positive"},
+            {"title": f"{base_symbol} Falls as Sellers Take Control", "sentiment": "negative"},
+            {"title": f"{base_symbol} Trading Volume Increases by 30%", "sentiment": "positive"},
+            {"title": f"{base_symbol} Shows Signs of Consolidation", "sentiment": "neutral"},
+            {"title": f"Analyst Report: {base_symbol} Forecast Updated", "sentiment": "neutral"}
+        ])
+        
+        # Current mock price to use in templates
+        current_price = self._get_mock_price(base_symbol)
+        
+        # Generate news items
+        for i in range(num_items):
+            # Select a random template
+            template = random.choice(templates)
+            
+            # Calculate a random target price based on sentiment
+            if template["sentiment"] == "positive":
+                target_price = current_price * (1 + random.uniform(0.05, 0.2))
+            elif template["sentiment"] == "negative":
+                target_price = current_price * (1 - random.uniform(0.05, 0.2))
+            else:
+                target_price = current_price * (1 + random.uniform(-0.03, 0.03))
+        
+            # Format target price nicely
+            formatted_price = f"{target_price:,.0f}" if target_price > 100 else f"{target_price:.2f}"
+            
+            # Replace placeholder with target price
+            title = template["title"].replace("$TARGET_PRICE", formatted_price)
+            
+            # Generate a random published time within the last week
+            days_ago = random.uniform(0, 7)
+            published_time = (now - timedelta(days=days_ago)).isoformat()
+            
+            # Select a random source
+            source = random.choice(sources)
+            
+            # Construct a mock news item
+            news_item = {
+                "title": title,
+                "summary": f"This is a mock summary for {title.lower()}.",
+                "published": published_time,
+                "source": source,
+                "url": f"https://example.com/mock-news/{i}",
+                "sentiment_score": self._mock_sentiment_score(template["sentiment"]),
+                "is_mock": True  # Flag to indicate this is mock data
+            }
+            
+            mock_news.append(news_item)
+        
+        # Sort by published time (most recent first)
+        mock_news.sort(key=lambda x: x["published"], reverse=True)
+        
+        return mock_news
+
+    def _get_mock_price(self, symbol):
+        """Get a realistic mock price for a given symbol"""
+        # Base prices for common assets
+        prices = {
+            "BTC": 65000,
+            "ETH": 3500,
+            "SOL": 150,
+            "ADA": 0.5,
+            "DOGE": 0.15,
+            "XRP": 0.5,
+            "XAU": 2400,  # Gold price in USD
+            "GOLD": 2400
+        }
+        
+        # Use the symbol's price or a default
+        return prices.get(symbol, 100)
+
+    def _mock_sentiment_score(self, sentiment_category):
+        """Generate a mock sentiment score based on category"""
+        import random
+        
+        if sentiment_category == "positive":
+            return random.uniform(0.55, 0.95)
+        elif sentiment_category == "negative":
+            return random.uniform(0.05, 0.45)
+        else:  # neutral
+            return random.uniform(0.45, 0.55)
+        
+    def _emergency_mock_news(self, symbol):
+        """Emergency fallback for mock news if main method fails"""
+        self.logger.warning(f"Using emergency mock news generator for {symbol}")
+        # Simplified version for emergency fallback
+        now = datetime.now()
+        
+        # Special case for XAU/USD
+        if 'XAU' in symbol:
+            return [
+                {
+                    "title": "Gold Prices Rally as Inflation Fears Mount",
+                    "summary": "Emergency mock data: Gold prices seeing strong support.",
+                    "published": now.isoformat(),
+                    "source": "Emergency Mock Data",
+                    "url": "https://example.com/mock-news/emergency",
+                    "sentiment_score": 0.65,
+                    "is_mock": True
+                },
+                {
+                    "title": "Gold Holds Above $2400 Level",
+                    "summary": "Emergency mock data: Gold maintaining key levels.",
+                    "published": (now - timedelta(days=1)).isoformat(),
+                    "source": "Emergency Mock Data",
+                    "url": "https://example.com/mock-news/emergency-2",
+                    "sentiment_score": 0.55,
+                    "is_mock": True
+                }
+            ]
+        else:
+            return [
+                {
+                    "title": f"{symbol} Market Analysis",
+                    "summary": f"Emergency mock data: {symbol} showing mixed signals.",
+                    "published": now.isoformat(),
+                    "source": "Emergency Mock Data",
+                    "url": "https://example.com/mock-news/emergency",
+                    "sentiment_score": 0.5,
+                    "is_mock": True
+                }
+            ]
+        
 if __name__ == "__main__":
     # Example usage
     api_keys = {

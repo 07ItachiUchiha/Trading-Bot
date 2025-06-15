@@ -194,6 +194,8 @@ class PositionMonitor:
             "SOL": 150.0,
             "ADA": 0.5,
             "DOGE": 0.15,
+            "XAU": 2400.0,  # Add XAU/USD support
+            "GOLD": 2400.0, # Alternative symbol for gold
         }
         
         base_price = price_map.get(base_symbol, 100.0)

@@ -19,10 +19,9 @@ import datetime
 sys.path.append(str(Path(__file__).parent.parent))
 
 # Import from components
-from components.auth import authenticate
-from components.database import ensure_db_exists
-from components.dashboard_ui import render_live_trading_tab, render_trade_history_tab, render_performance_tab, render_settings_tab
-from components.trading import fetch_historical_data
+from dashboard.components.auth import authenticate
+from dashboard.components.database import ensure_db_exists
+from dashboard.components.dashboard_ui import render_live_trading_tab, render_trade_history_tab, render_performance_tab, render_settings_tab
 
 # Import utils
 from utils.websocket_manager import WebSocketManager
@@ -143,8 +142,7 @@ def main():
         auto_update_signals = st.sidebar.checkbox(
             "Auto-update signals", 
             value=st.session_state.update_signals,
-            key="update_signals_toggle" 
-        )
+            key="update_signals_toggle"        )
         
         # Update session state
         if st.session_state.update_signals != auto_update_signals:
@@ -154,7 +152,7 @@ def main():
             # Initialize the appropriate WebSocket manager
             ws = initialize_websocket(data_provider)
             
-            st.session_state.data = fetch_historical_data(symbol, timeframe, provider=data_provider)
+            st.session_state.data = fetch_historical_data(symbol, timeframe, limit=100, provider=data_provider)
             st.session_state.last_updated = datetime.datetime.now()
             st.session_state.last_refresh = datetime.datetime.now()
             
@@ -162,7 +160,7 @@ def main():
             if ws and auto_refresh:
                 ws.subscribe(symbol, handle_real_time_update)
     
-        st.sidebar.title("🔔 Notifications")
+        st.sidebar.title("Notifications")
         notification_options = st.sidebar.multiselect(
             "Select notification channels",
             options=["Telegram", "Discord", "Slack", "Console"],
@@ -184,10 +182,9 @@ def main():
     
     # Initialize WebSocket for real-time updates
     ws = initialize_websocket(data_provider)
-    
-    # Initialize data if it doesn't exist
+      # Initialize data if it doesn't exist
     if "data" not in st.session_state:
-        st.session_state.data = fetch_historical_data(symbol, timeframe, provider=data_provider)
+        st.session_state.data = fetch_historical_data(symbol, timeframe, limit=100, provider=data_provider)
         
         # Subscribe to real-time updates for this symbol
         if ws and auto_refresh:
@@ -198,10 +195,9 @@ def main():
         if ws and auto_refresh:
             # Unsubscribe from old symbol
             ws.unsubscribe(st.session_state.symbol, handle_real_time_update)
-            
         st.session_state.symbol = symbol
         st.session_state.timeframe = timeframe
-        st.session_state.data = fetch_historical_data(symbol, timeframe, provider=data_provider)
+        st.session_state.data = fetch_historical_data(symbol, timeframe, limit=100, provider=data_provider)
         
         # Subscribe to real-time updates for new symbol
         if ws and auto_refresh:

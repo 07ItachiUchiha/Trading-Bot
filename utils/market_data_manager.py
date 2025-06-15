@@ -240,7 +240,7 @@ class MarketDataManager:
         # Generate dates
         dates = pd.date_range(start=start_date, end=end_date, periods=limit)
         
-        # Base price based on symbol - simplified to remove Binance tokens
+        # Base price based on symbol with added XAU/USD support
         if 'BTC' in symbol:
             base_price = 65000  # BTC base price
         elif 'ETH' in symbol:
@@ -251,12 +251,20 @@ class MarketDataManager:
             base_price = 0.5    # ADA base price
         elif 'DOGE' in symbol:
             base_price = 0.15   # DOGE base price
+        elif 'XAU' in symbol or 'GOLD' in symbol:
+            base_price = 2400   # Gold price in USD
+            volatility_factor = 0.005  # Lower volatility for gold
         else:
             base_price = 100    # Default price
         
-        # Generate price with some randomness
+        # Determine volatility factor based on asset type
+        volatility_factor = 0.01  # Default 1% standard deviation
+        if 'XAU' in symbol or 'GOLD' in symbol:
+            volatility_factor = 0.005  # Gold is less volatile (0.5%)
+        
+        # Generate price with some randomness and appropriate volatility
         np.random.seed(42)  # For reproducibility
-        price_changes = np.random.normal(0, base_price * 0.01, limit)  # 1% standard deviation
+        price_changes = np.random.normal(0, base_price * volatility_factor, limit)
         prices = base_price + np.cumsum(price_changes)
         prices = np.maximum(prices, base_price * 0.5)  # Ensure prices don't go too low
         

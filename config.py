@@ -20,7 +20,7 @@ FINNHUB_WEBHOOK_SECRET = 'd0csqrpr01ql2j3fac90'
 
 # General trading configuration
 SYMBOL = 'BTCUSD'  # Default symbol for backward compatibility (Note: Alpaca uses BTCUSD instead of BTCUSDT)
-DEFAULT_SYMBOLS = ['BTCUSD', 'ETHUSD', 'BNBUSD', 'ADAUSD', 'SOLUSD', 'DOGEUSD']  # List of tradable symbols
+DEFAULT_SYMBOLS = ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XAU/USD']  # List of tradable symbols
 TIMEFRAME = '1H'    # Default timeframe (Note: Alpaca uses uppercase H instead of lowercase h)
 MARKET_TYPE = 'crypto' # crypto or stocks
 

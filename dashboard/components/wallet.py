@@ -81,14 +81,15 @@ def calculate_portfolio_value(balances, prices=None):
 
 def _get_current_price(symbol):
     """Get current market price for a symbol with fallback to mock data"""
-    # Price map for mock data - removed Binance tokens
+    # Price map for mock data - added XAU/USD
     price_map = {
         "BTC": 65000.0,
         "ETH": 3500.0,
-        # Removed BNB
         "SOL": 150.0,
         "ADA": 0.5,
         "DOGE": 0.15,
+        "XAU": 2400.0,
+        "GOLD": 2400.0,
     }
     
     base_price = price_map.get(symbol, 100.0)
