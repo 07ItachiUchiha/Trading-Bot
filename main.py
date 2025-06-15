@@ -20,16 +20,26 @@ from strategy.news_strategy import NewsBasedStrategy  # Import the news-based st
 from strategy.earnings_report_strategy import EarningsReportStrategy  # Import the earnings report strategy
 from utils.risk_management import calculate_position_size, manage_open_position
 from utils.telegram_alert import send_alert
-from config import API_KEY, API_SECRET, CAPITAL, RISK_PERCENT, MAX_CAPITAL_PER_TRADE
-from config import NEWS_API_KEY, ALPHAVANTAGE_API_KEY, FINNHUB_API_KEY  # Import API keys for news
+from config_manager import get_api_key, get_trading_config, ConfigManager  # Use new config manager
 from utils.llm_integration import get_llm_response
 
+# Initialize configuration
+config_manager = ConfigManager()
+trading_config = config_manager.get_trading_config()
+
 class VolatilityBreakoutBot:
-    def __init__(self, symbol='BTCUSDT', timeframe='1h', capital=CAPITAL, risk_percent=RISK_PERCENT, 
+    def __init__(self, symbol='BTCUSDT', timeframe='1h', capital=None, risk_percent=None, 
                  use_news=True, news_weight=0.5, use_earnings=True, earnings_weight=0.6):
         """Initialize the trading bot with configuration parameters"""
+        
+        # Use config manager for defaults
+        if capital is None:
+            capital = trading_config.get('CAPITAL', 10000)
+        if risk_percent is None:
+            risk_percent = trading_config.get('RISK_PERCENT', 1.0)
+            
         # Initialize connection to exchange
-        self.client = Client(API_KEY, API_SECRET)
+        self.client = Client(get_api_key('alpaca_key'), get_api_key('alpaca_secret'))
         self.symbol = symbol
         self.timeframe = self._convert_timeframe(timeframe)
         self.capital = capital
@@ -52,12 +62,11 @@ class VolatilityBreakoutBot:
                 'news_lookback_days': 2,            # Days to look back for news
                 'sentiment_threshold_buy': 0.2,     # Minimum sentiment score to consider buying
                 'sentiment_threshold_sell': -0.15,  # Maximum sentiment score to consider selling
-                'min_news_count': 3,                # Minimum number of news items required
-                'use_keyword_boost': True,          # Boost sentiment based on keywords
+                'min_news_count': 3,                # Minimum number of news items required                'use_keyword_boost': True,          # Boost sentiment based on keywords
                 'api_keys': {
-                    'news_api': NEWS_API_KEY,
-                    'alphavantage': ALPHAVANTAGE_API_KEY,
-                    'finnhub': FINNHUB_API_KEY
+                    'news_api': get_api_key('news_api_key'),
+                    'alphavantage': get_api_key('alphavantage_key'),
+                    'finnhub': get_api_key('finnhub_key')
                 },
                 'cache_expiry_minutes': 30,         # Cache news for 30 minutes
             }
@@ -83,12 +92,11 @@ class VolatilityBreakoutBot:
                 'post_event_days': 2,             # Days after event to continue monitoring
                 'confidence_threshold': 0.7,      # Minimum confidence to execute a trade
                 'stop_loss_percent': 3.0,         # Stop loss percentage for event trades
-                'take_profit_percent': 5.0,       # Take profit percentage for event trades
-                'max_position_size': 0.1,         # Maximum position size as fraction of portfolio
+                'take_profit_percent': 5.0,       # Take profit percentage for event trades                'max_position_size': 0.1,         # Maximum position size as fraction of portfolio
                 'api_keys': {
-                    'news_api': NEWS_API_KEY,
-                    'alphavantage': ALPHAVANTAGE_API_KEY,
-                    'finnhub': FINNHUB_API_KEY
+                    'news_api': get_api_key('news_api_key'),
+                    'alphavantage': get_api_key('alphavantage_key'),
+                    'finnhub': get_api_key('finnhub_key')
                 },
                 'use_sentiment_boost': True       # Use sentiment analysis to boost signals
             }
@@ -240,12 +248,11 @@ class VolatilityBreakoutBot:
     
     def _execute_trade(self, direction, confidence, source='technical'):
         """Execute a trade based on the given direction and confidence"""
-        try:
-            # Calculate position size based on risk parameters and confidence
+        try:            # Calculate position size based on risk parameters and confidence
             position_size = calculate_position_size(
                 self.capital, 
                 self.risk_percent, 
-                MAX_CAPITAL_PER_TRADE, 
+                trading_config.get('MAX_CAPITAL_PER_TRADE', 5000), 
                 confidence,
                 self.df['close'].iloc[-1]
             )
@@ -424,13 +431,12 @@ class VolatilityBreakoutBot:
                 time.sleep(60)  # Wait before retrying
 
 
-if __name__ == "__main__":
-    # Initialize the bot with both news and earnings strategies
+if __name__ == "__main__":    # Initialize the bot with both news and earnings strategies
     bot = VolatilityBreakoutBot(
         symbol='BTCUSDT',
         timeframe='1h',
-        capital=CAPITAL,
-        risk_percent=RISK_PERCENT,
+        capital=trading_config.get('CAPITAL', 10000),
+        risk_percent=trading_config.get('RISK_PERCENT', 1.0),
         use_news=True,
         news_weight=0.5,
         use_earnings=True,

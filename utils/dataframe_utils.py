@@ -112,3 +112,58 @@ def clean_dataframe(df):
             result[col] = pd.to_numeric(result[col], errors='coerce')
     
     return result
+
+def validate_ohlc_data(data):
+    """
+    Validate OHLC (Open, High, Low, Close) data for correctness
+    
+    Args:
+        data (pd.DataFrame): DataFrame containing OHLC data
+        
+    Returns:
+        dict: Validation result with is_valid flag and any issues found
+    """
+    issues = []
+    is_valid = True
+    
+    # Check required columns
+    required_columns = ['open', 'high', 'low', 'close']
+    missing_columns = [col for col in required_columns if col not in data.columns]
+    if missing_columns:
+        issues.append(f"Missing required columns: {missing_columns}")
+        is_valid = False
+    
+    if is_valid:
+        # Check for logical consistency: high >= max(open, close) and low <= min(open, close)
+        for idx, row in data.iterrows():
+            if pd.isna(row['open']) or pd.isna(row['high']) or pd.isna(row['low']) or pd.isna(row['close']):
+                continue  # Skip rows with NaN values
+                
+            if row['high'] < max(row['open'], row['close']):
+                issues.append(f"Row {idx}: High price is less than max(open, close)")
+                is_valid = False
+                
+            if row['low'] > min(row['open'], row['close']):
+                issues.append(f"Row {idx}: Low price is greater than min(open, close)")
+                is_valid = False
+        
+        # Check for negative prices
+        for col in required_columns:
+            if (data[col] < 0).any():
+                issues.append(f"Column {col} contains negative values")
+                is_valid = False
+                
+        # Check for extreme outliers (prices that are 100x different from adjacent candles)
+        if len(data) > 1:
+            for col in required_columns:
+                price_changes = data[col].pct_change().abs()
+                extreme_changes = price_changes > 10  # 1000% change
+                if extreme_changes.any():
+                    extreme_indices = data.index[extreme_changes].tolist()
+                    issues.append(f"Column {col} has extreme price changes at indices: {extreme_indices}")
+    
+    return {
+        'is_valid': is_valid,
+        'issues': issues,
+        'summary': f"{'Valid' if is_valid else 'Invalid'} OHLC data with {len(issues)} issues"
+    }
