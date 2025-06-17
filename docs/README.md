@@ -1,23 +1,23 @@
-# 📚 Trading Bot Documentation
+#  Trading Bot Documentation
 
 ## **Quick Navigation**
 
-### **🚀 Getting Started**
+### ** Getting Started**
 - [Installation Guide](DEPLOYMENT.md#quick-start)
 - [Configuration Setup](../config_example.py)
 - [First Run Tutorial](#first-run-tutorial)
 
-### **📖 Core Documentation**
+### ** Core Documentation**
 - [System Architecture](ARCHITECTURE.md)
 - [API Reference](API_REFERENCE.md)
 - [Deployment Guide](DEPLOYMENT.md)
 
-### **🛠️ Development**
+### ** Development**
 - [Naming Conventions](../standards/naming_conventions.md)
 - [Security Guidelines](../security/README.md)
 - [Testing Framework](../tests/README.md)
 
-### **💡 Strategies & Features**
+### ** Strategies & Features**
 - [Trading Strategies](#trading-strategies)
 - [Risk Management](#risk-management)
 - [Sentiment Analysis](#sentiment-analysis)

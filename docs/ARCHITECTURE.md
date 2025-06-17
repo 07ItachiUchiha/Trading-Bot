@@ -1,4 +1,4 @@
-# 🏗️ Trading Bot Architecture
+# Trading Bot Architecture
 
 ## **System Overview**
 

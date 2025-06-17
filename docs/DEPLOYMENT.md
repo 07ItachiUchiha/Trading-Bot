@@ -1,4 +1,4 @@
-# 🚀 Trading Bot Deployment Guide
+#  Trading Bot Deployment Guide
 
 ## **Quick Start**
 
