@@ -11,8 +11,8 @@ Built as a research project exploring how to fuse diverse market signals (quanti
 - **NLP sentiment**: Aggregates news from multiple APIs (NewsAPI, Finnhub, Alpha Vantage) and scores via VADER + TextBlob
 - **Earnings events**: Monitors earnings reports and economic calendar for event-driven signals
 - **LLM integration**: Uses Google Gemini (free tier) or OpenRouter for generating human-readable prediction rationale
-- **Risk management**: Position sizing, trailing stops, daily P&L limits, correlation protection
-- **Dashboard**: Streamlit web UI for live monitoring, charts, trade history, and prediction explainability
+- **Guardrails**: Confidence-weighting, volatility flags, and configurable exposure limits
+- **Dashboard**: Streamlit web UI for live monitoring, charts, prediction logs, and explainability
 - **Alerts**: Telegram/Discord/Slack notifications on actionable predictions
 
 ## Prediction Output
@@ -50,7 +50,7 @@ pip install -r requirements.txt
 
 # Copy config template
 cp config_example.py config.py
-# Edit config.py with your Alpaca keys (required for paper trading)
+# Edit config.py with your Alpaca keys (required for live data connectivity)
 
 # Verify setup
 python setup_check.py
@@ -70,7 +70,7 @@ OPENROUTER_API_KEY=your_openrouter_key
 
 **Why Gemini?** Google's Gemini API is ideal for this use case:
 
-- Free tier with 15 requests/minute (sufficient for intra-day trading)
+- Free tier with 15 requests/minute (sufficient for intraday prediction refresh)
 - Strong reasoning capability for market analysis
 - Fast response times (~500-1000ms)
 - Structured output support
@@ -86,7 +86,7 @@ streamlit run dashboard/app.py
 # Opens at http://localhost:8501
 ```
 
-**Headless auto trader** (CLI):
+**Headless prediction runner** (CLI):
 
 ```bash
 python run_auto_trader.py
@@ -105,16 +105,16 @@ python tests/test_suite.py         # full test suite
 ## Project Structure
 
 ```
-Trading Bot/
+project/
 ├── prediction/                    # Core prediction engine
 │   ├── engine.py                 # Signal fusion + prediction pipeline
 │   └── schema.py                 # Prediction dataclass (output contract)
 ├── dashboard/                     # Streamlit web interface
 │   ├── app.py                    # Main dashboard
-│   ├── pages/                    # Sub-pages (trading, news, pnl)
+│   ├── pages/                    # Sub-pages (prediction, news, analytics)
 │   └── components/               # Reusable UI components
-├── strategy/                      # Trading strategies
-│   ├── auto_trading_manager.py   # Main loop (uses prediction engine)
+├── strategy/                      # Signal strategy modules
+│   ├── auto_trading_manager.py   # Main prediction loop (uses prediction engine)
 │   ├── multiple_strategies.py    # Pluggable strategy framework
 │   ├── news_strategy.py          # Sentiment-based signals
 │   └── earnings_report_strategy.py # Event-driven signals
@@ -123,13 +123,13 @@ Trading Bot/
 │   ├── signal_processor.py       # Weighted signal fusion
 │   ├── sentiment_analyzer.py     # Multi-source NLP sentiment
 │   ├── websocket_manager.py      # Alpaca real-time data
-│   ├── risk_management.py        # Position sizing + trailing stops
+│   ├── risk_management.py        # Prediction guardrail helpers
 │   └── market_data_manager.py    # Historical data + caching
 ├── security/                      # Encrypted config storage
 ├── tests/                         # Test suite
 ├── docs/                          # Architecture, audit, cleanup docs
 ├── config.py                      # Main configuration (env vars)
-├── run_auto_trader.py            # Entry point (headless mode)
+├── run_auto_trader.py            # Entry point (headless prediction mode)
 ├── run_bot.py                    # Entry point (dashboard)
 └── README.md                      # This file
 ```
@@ -174,7 +174,7 @@ class MyStrategy(TradingStrategy):
 All settings via environment variables or `config.py`:
 
 ```python
-# Required - Alpaca broker keys (paper trading by default)
+# Required - Alpaca API keys (data/runtime access)
 API_KEY = "your_alpaca_key"
 API_SECRET = "your_alpaca_secret"
 
@@ -187,7 +187,7 @@ ALPHAVANTAGE_API_KEY = "..."
 GEMINI_API_KEY = "..."   # Recommended (free)
 OPENROUTER_API_KEY = "..."
 
-# Trading parameters
+# Runtime parameters
 CAPITAL = 10000
 RISK_PERCENT = 1.0
 DEFAULT_SYMBOLS = ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XAU/USD']
@@ -204,7 +204,7 @@ DEFAULT_SYMBOLS = ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XAU/USD']
 
 ## Recent Changes (Platform Reposition)
 
-The project has been repositioned from a basic crypto trading bot into a **fast, explainable Algorithmic Market Prediction Platform**.
+The project has been repositioned from a basic crypto execution bot into a **fast, explainable Algorithmic Market Prediction Platform**.
 
 ✅ **New prediction engine** - Structured Prediction schema with explainability (21 tests pass)
 ✅ **Upgraded LLM** - Gemini (primary) + OpenRouter (fallback) with intelligent fallback  
@@ -216,9 +216,9 @@ See [AUDIT_AND_ARCHITECTURE.md](docs/AUDIT_AND_ARCHITECTURE.md) for full technic
 
 ## Disclaimer
 
-This is for educational and research purposes. Trading involves risk. Use paper trading mode first. Past performance does not guarantee future results.
+This is for educational and research purposes. Market predictions involve uncertainty. Validate outputs before any real-world use.
 
 ---
 
 **Last updated:** February 2026  
-**Status:** Production-ready (paper trading). Requires API keys for live trading.
+**Status:** Production-ready (prediction mode). Requires API keys for live market connectivity.

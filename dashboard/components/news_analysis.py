@@ -14,11 +14,11 @@ from utils.enhanced_sentiment import EnhancedSentimentAnalyzer
 from utils.news_trading_advisor import NewsTradingAdvisor
 from config import NEWS_API_KEY, ALPHAVANTAGE_API_KEY, FINNHUB_API_KEY
 
-# Initialize a global news trading advisor instance
+# Initialize a global news prediction advisor instance
 news_advisor = None
 
 def get_news_advisor():
-    """Get or create a news trading advisor instance"""
+    """Get or create a news prediction advisor instance."""
     global news_advisor
     
     if news_advisor is None:
@@ -32,7 +32,7 @@ def get_news_advisor():
     return news_advisor
 
 def display_news_analysis(symbol=None):
-    """Display news-based trading recommendations"""
+    """Display news-based prediction recommendations."""
     st.header("📰 News Sentiment Analysis")
     
     advisor = get_news_advisor()
@@ -63,13 +63,13 @@ def display_news_analysis(symbol=None):
     action_color = action_colors.get(recommendation['action'], "gray")
     
     st.markdown(f"""
-    ## <span style='color:{action_color}'>{recommendation['action']}</span> Recommendation
+    ## <span style='color:{action_color}'>{recommendation['action']}</span> Prediction
     
     **Confidence:** {recommendation['confidence']*100:.1f}% | 
     **Urgency:** {recommendation['urgency']} | 
     **Risk Level:** {recommendation['risk_level']}
     
-    **Position Size:** {recommendation['position_size']}
+    **Suggested Exposure:** {recommendation['position_size']}
     """, unsafe_allow_html=True)
     
     st.info(recommendation['recommendation'])

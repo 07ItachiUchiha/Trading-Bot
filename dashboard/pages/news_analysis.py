@@ -12,14 +12,14 @@ from dashboard.components.news_analysis import display_news_analysis
 if __name__ == "__main__":
     # Only set page config when running the file directly
     st.set_page_config(
-        page_title="Trading Bot - News Analysis",
+        page_title="Market Prediction - News Analysis",
         page_icon="📰",
         layout="wide"
     )
 
     # Display page content
-    st.title(" News Trading Analysis")
-    st.write("Analyze news sentiment and get trading recommendations based on market sentiment.")
+    st.title("News Prediction Analysis")
+    st.write("Analyze news sentiment and get prediction guidance based on market sentiment.")
 
     # Display symbol selector
     symbol = st.selectbox(
@@ -34,13 +34,13 @@ if __name__ == "__main__":
     # Additional information
     with st.expander("About News Analysis"):
         st.write("""
-        This page provides trading recommendations based on news sentiment analysis:
+        This page provides prediction guidance based on news sentiment analysis:
         
         * **Sentiment Score**: Overall sentiment score from -1 (very negative) to 1 (very positive)
-        * **Signal**: Recommended trading action based on sentiment analysis
+        * **Signal**: Recommended directional stance from sentiment analysis
         * **Confidence**: Confidence level in the recommendation
-        * **Urgency**: How quickly you should consider acting on the recommendation
-        * **Position Size**: Suggested position size based on sentiment strength and confidence
+        * **Urgency**: How quickly market context may change
+        * **Suggested Exposure**: Suggested exposure level from sentiment strength and confidence
         
         The system analyzes news articles from multiple sources, weighing more recent news more heavily.
         Sentiment is tracked over time to identify trends and changes in market perception.

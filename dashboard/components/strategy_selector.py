@@ -256,11 +256,11 @@ def display_strategy_performance(strategy_name, data, signals):
         st.warning("Insufficient data to analyze strategy performance")
         return
         
-    st.subheader("Strategy Performance")
+    st.subheader("Prediction Performance")
     
     # Check if we have buy/sell signals
     if 'buy_signals' not in signals or 'sell_signals' not in signals:
-        st.warning("No trading signals available for this strategy.")
+        st.warning("No directional signals available for this strategy.")
         return
     
     # Simulate strategy performance
@@ -278,8 +278,8 @@ def display_strategy_performance(strategy_name, data, signals):
     with col3:
         st.metric("Profit Factor", f"{performance['profit_factor']:.2f}")
     
-    # Display trade count
-    st.caption(f"Based on {performance['trade_count']} simulated trades")
+    # Display simulation event count
+    st.caption(f"Based on {performance['trade_count']} simulated signal events")
     
     # Display performance chart
     if not performance['equity_curve'].empty:

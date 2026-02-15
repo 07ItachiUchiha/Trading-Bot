@@ -12,8 +12,8 @@ from dashboard.components.strategy_selector import display_strategy_selector, di
 
 def main():
     """Display the strategy tester page"""
-    st.title("Strategy Tester")
-    st.write("Test and compare different trading strategies on historical data.")
+    st.title("Strategy Explorer")
+    st.write("Test and compare different prediction strategies on historical data.")
 
     # Sidebar options
     with st.sidebar:

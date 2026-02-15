@@ -26,7 +26,7 @@ def setup_logging():
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler(log_dir / f"trading_{time.strftime('%Y%m%d')}.log"),
+            logging.FileHandler(log_dir / f"prediction_{time.strftime('%Y%m%d')}.log"),
             logging.StreamHandler()
         ]
     )
@@ -37,24 +37,24 @@ def setup_logging():
     return logger
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Run the trading bot')
+    parser = argparse.ArgumentParser(description='Run the prediction runtime')
     
     parser.add_argument('--symbols', type=str, nargs='+', default=DEFAULT_SYMBOLS,
-                        help='Symbols to trade')
+                        help='Symbols to analyze')
     parser.add_argument('--timeframe', type=str, default='30Min',
-                        help='Timeframe for trading')
+                        help='Prediction timeframe')
     parser.add_argument('--capital', type=float, default=CAPITAL,
-                        help='Trading capital')
+                        help='Reference capital')
     parser.add_argument('--risk-percent', type=float, default=RISK_PERCENT,
-                        help='Risk percentage per trade')
+                        help='Risk budget percentage per signal')
     parser.add_argument('--profit-target', type=float, default=PROFIT_TARGET_PERCENT,
-                        help='Profit target percentage')
+                        help='Target threshold percentage')
     parser.add_argument('--daily-profit-target', type=float, default=DAILY_PROFIT_TARGET_PERCENT,
-                        help='Daily profit target percentage')
+                        help='Daily target threshold percentage')
     parser.add_argument('--use-news', action='store_true', default=True,
                         help='Use news sentiment analysis')
     parser.add_argument('--use-earnings', action='store_true', default=True,
-                        help='Use earnings reports for trading signals')
+                        help='Use earnings reports for model signals')
     parser.add_argument('--webhook-host', type=str, default='0.0.0.0',
                         help='Host for the webhook server')
     parser.add_argument('--webhook-port', type=int, default=8000,
@@ -68,7 +68,7 @@ def main():
     args = parse_args()
     logger = setup_logging()
     
-    logger.info(f"Starting bot with symbols: {args.symbols}")
+    logger.info(f"Starting prediction runtime with symbols: {args.symbols}")
     
     # start webhook server if enabled and securely configured
     webhook_enabled = not args.no_webhook
@@ -83,7 +83,7 @@ def main():
         webhook_thread = start_webhook_server(args.webhook_host, args.webhook_port)
         time.sleep(1)  # give the server a sec to start up
     
-    # Create trading manager
+    # Create runtime manager
     try:
         trading_manager = AutoTradingManager(
             symbols=args.symbols,
@@ -105,15 +105,15 @@ def main():
             except Exception as e:
                 logger.error(f"Error connecting webhook events: {e}")
                 
-        # Run the trading manager (this will block)
+        # Run the runtime manager (this will block)
         trading_manager.run()
         
     except KeyboardInterrupt:
-        logger.info("Trading bot interrupted by user")
+        logger.info("Prediction runtime interrupted by user")
         if 'trading_manager' in locals():
             trading_manager.stop()
     except Exception as e:
-        logger.exception(f"Error running trading bot: {e}")
+        logger.exception(f"Error running prediction runtime: {e}")
         return 1
         
     return 0

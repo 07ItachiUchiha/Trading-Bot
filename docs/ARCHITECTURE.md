@@ -51,7 +51,7 @@ Predictions are generated from technical + sentiment + event factors, then expos
 
 - `dashboard/app.py` — Streamlit entrypoint
 - `dashboard/components/market_data.py` — prediction-based market signal view
-- other components/pages for controls, PnL, history, and monitoring
+- other components/pages for strategy exploration, prediction logs, analytics, and monitoring
 
 ## Tech stack
 

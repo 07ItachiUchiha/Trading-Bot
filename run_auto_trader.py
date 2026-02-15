@@ -17,7 +17,7 @@ def setup_logging():
     log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
     os.makedirs(log_dir, exist_ok=True)
     
-    log_file = os.path.join(log_dir, f'auto_trader_{datetime.now().strftime("%Y%m%d")}.log')
+    log_file = os.path.join(log_dir, f'prediction_runtime_{datetime.now().strftime("%Y%m%d")}.log')
     
     # Configure root logger
     logging.basicConfig(
@@ -32,25 +32,25 @@ def setup_logging():
     return logging.getLogger('run_auto_trader')
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description='Run auto trading algorithm.')
+    parser = argparse.ArgumentParser(description='Run automated market prediction runtime.')
     
     parser.add_argument('--symbols', nargs='+', default=None,
-                      help='Trading symbols to use (e.g., BTCUSDT ETHUSDT)')
+                      help='Symbols to analyze (e.g., BTC/USD ETH/USD)')
     
     parser.add_argument('--timeframe', default='1h',
-                      help='Trading timeframe (e.g., 1m, 5m, 15m, 1h, 4h, 1d)')
+                      help='Prediction timeframe (e.g., 1m, 5m, 15m, 1h, 4h, 1d)')
     
     parser.add_argument('--capital', type=float, default=CAPITAL,
-                      help=f'Initial capital in USD (default: {CAPITAL})')
+                      help=f'Reference capital in USD (default: {CAPITAL})')
     
     parser.add_argument('--risk-percent', type=float, default=RISK_PERCENT,
-                      help=f'Risk percentage per trade (default: {RISK_PERCENT}%)')
+                      help=f'Risk budget percentage per signal (default: {RISK_PERCENT}%)')
     
     parser.add_argument('--profit-target', type=float, default=PROFIT_TARGET_PERCENT,
-                      help=f'Profit target percentage to stop trading (default: {PROFIT_TARGET_PERCENT}%)')
+                      help=f'Target threshold percentage (default: {PROFIT_TARGET_PERCENT}%)')
     
     parser.add_argument('--daily-profit-target', type=float, default=DAILY_PROFIT_TARGET_PERCENT,
-                      help=f'Daily profit target percentage (default: {DAILY_PROFIT_TARGET_PERCENT}%)')
+                      help=f'Daily target threshold percentage (default: {DAILY_PROFIT_TARGET_PERCENT}%)')
     
     parser.add_argument('--use-news', action='store_true', default=True,
                       help='Use news-based strategy (default: True)')
@@ -74,7 +74,7 @@ def main():
     
     symbols = args.symbols if args.symbols else DEFAULT_SYMBOLS
     
-    logger.info(f"Starting auto trader")
+    logger.info("Starting prediction runtime")
     logger.info(f"Symbols: {symbols} | Capital: ${args.capital} | Risk: {args.risk_percent}%")
     
     try:
@@ -94,9 +94,9 @@ def main():
         trader.run()
         
     except KeyboardInterrupt:
-        logger.info("Auto trader stopped by user")
+        logger.info("Prediction runtime stopped by user")
     except Exception as e:
-        logger.error(f"Error running auto trader: {e}", exc_info=True)
+        logger.error(f"Error running prediction runtime: {e}", exc_info=True)
         return 1
     
     return 0

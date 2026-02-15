@@ -207,16 +207,16 @@ def main():
     
     # Display selected page
     if page == "Prediction Dashboard":
-        display_trading_dashboard()
+        display_prediction_dashboard()
     elif page == "News Analysis":
         from dashboard.pages.news_analysis import display_news_analysis
         display_news_analysis(symbol)
     elif page == "Strategy Explorer":
         display_strategy_tester()
     elif page == "Prediction Analytics":
-        display_pnl_analysis()
+        display_prediction_analytics()
     elif page == "Prediction Log":
-        display_trade_history()
+        display_prediction_log()
 
 def display_strategy_tester():
     """Display the strategy explorer page."""
@@ -279,7 +279,7 @@ def display_strategy_tester():
         st.error(f"Error: {e}")
         st.info("Please check your input parameters and try again.")
 
-def display_trading_dashboard():
+def display_prediction_dashboard():
     """Display the main prediction dashboard."""
     st.title("Prediction Dashboard")
     
@@ -353,12 +353,12 @@ def display_trading_dashboard():
     with tab4:
         render_settings_tab()
 
-def display_pnl_analysis():
+def display_prediction_analytics():
     """Display prediction analytics page."""
     st.title("Prediction Analytics")
     render_performance_tab()
 
-def display_trade_history():
+def display_prediction_log():
     """Display prediction outcome log page."""
     st.title("Prediction Log")
     render_prediction_log_tab()

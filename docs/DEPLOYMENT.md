@@ -1,12 +1,12 @@
 # Deployment
 
-How to get the bot running locally or on a server.
+How to run the prediction platform locally or on a server.
 
 ## Local setup
 
 ```bash
 git clone <repo-url>
-cd trading-bot
+cd market-prediction-platform
 python -m venv venv
 source venv/bin/activate   # or venv\Scripts\activate on Windows
 pip install -r requirements.txt
@@ -41,7 +41,7 @@ Dashboard mode (recommended for getting started):
 streamlit run dashboard/app.py
 ```
 
-Automated trading:
+Headless prediction runtime:
 ```bash
 python run_auto_trader.py --symbols BTC/USD ETH/USD --capital 10000
 ```
@@ -58,11 +58,11 @@ python run_auto_trader.py --symbols BTC/USD ETH/USD --capital 10000
 ### Setup
 
 ```bash
-sudo useradd -m -s /bin/bash tradingbot
-sudo su - tradingbot
+sudo useradd -m -s /bin/bash predictionbot
+sudo su - predictionbot
 
-git clone <repo-url> ~/trading-bot
-cd ~/trading-bot
+git clone <repo-url> ~/market-prediction-platform
+cd ~/market-prediction-platform
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -70,19 +70,19 @@ pip install -r requirements.txt
 
 ### Systemd service
 
-Create `/etc/systemd/system/tradingbot.service`:
+Create `/etc/systemd/system/predictionbot.service`:
 ```ini
 [Unit]
-Description=Trading Bot
+Description=Market Prediction Service
 After=network.target
 
 [Service]
 Type=simple
 Restart=always
 RestartSec=1
-User=tradingbot
-WorkingDirectory=/home/tradingbot/trading-bot
-ExecStart=/home/tradingbot/trading-bot/venv/bin/python run_auto_trader.py
+User=predictionbot
+WorkingDirectory=/home/predictionbot/market-prediction-platform
+ExecStart=/home/predictionbot/market-prediction-platform/venv/bin/python run_auto_trader.py
 
 [Install]
 WantedBy=multi-user.target
@@ -91,8 +91,8 @@ WantedBy=multi-user.target
 Then:
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable tradingbot
-sudo systemctl start tradingbot
+sudo systemctl enable predictionbot
+sudo systemctl start predictionbot
 ```
 
 You can do the same for the dashboard if you want it running as a service.
@@ -100,13 +100,13 @@ You can do the same for the dashboard if you want it running as a service.
 ### Logging
 
 ```bash
-sudo mkdir -p /var/log/tradingbot
-sudo chown tradingbot:tradingbot /var/log/tradingbot
+sudo mkdir -p /var/log/predictionbot
+sudo chown predictionbot:predictionbot /var/log/predictionbot
 ```
 
-Set up logrotate at `/etc/logrotate.d/tradingbot`:
+Set up logrotate at `/etc/logrotate.d/predictionbot`:
 ```
-/var/log/tradingbot/*.log {
+/var/log/predictionbot/*.log {
     daily
     rotate 30
     compress
@@ -128,7 +128,7 @@ sudo ufw allow 8501/tcp  # dashboard
 Back up config and the SQLite DB regularly:
 ```bash
 tar -czf ~/backups/config_$(date +%Y%m%d).tar.gz config.py data/
-cp dashboard/data/trading_bot.db ~/backups/trading_bot_$(date +%Y%m%d).db
+cp dashboard/data/trading_bot.db ~/backups/prediction_runtime_$(date +%Y%m%d).db
 ```
 
 ---
@@ -137,7 +137,7 @@ cp dashboard/data/trading_bot.db ~/backups/trading_bot_$(date +%Y%m%d).db
 
 **Service won't start:**
 ```bash
-sudo journalctl -u tradingbot -f
+sudo journalctl -u predictionbot -f
 ```
 
 **API errors:**
@@ -146,12 +146,12 @@ Double check your keys in config.py. Try:
 python -c "from config import API_KEY; print(bool(API_KEY))"
 ```
 
-**No trades happening:**
-Check signal thresholds and risk limits. The bot won't trade if confidence is too low or daily limits are hit.
+**No actionable signals:**
+Check signal thresholds and data connectivity. The runtime will stay neutral if confidence is too low.
 
 **Logs:**
 ```bash
-tail -f logs/trading_*.log
+tail -f logs/prediction_*.log
 ```
 
 ## Maintenance

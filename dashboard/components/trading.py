@@ -28,7 +28,7 @@ except ImportError:
     if not API_KEY or not API_SECRET:
         print("Warning: API keys not found in config or environment variables")
 
-# Import trading bot modules
+# Import prediction modules
 try:
     from strategy.strategy import detect_consolidation, detect_breakout
     from utils.sentiment_analyzer import SentimentAnalyzer

@@ -15,7 +15,7 @@ from .trading import (
 )
 from .database import get_trades_from_db
 
-def render_live_trading_tab(data, signals=None):
+def render_live_prediction_tab(data, signals=None):
     """Render a prediction-only live tab with no execution controls."""
     st.subheader("Live Prediction")
 
@@ -503,3 +503,7 @@ def render_settings_tab():
 # Backward-compatible alias for older imports
 def render_trade_history_tab():
     return render_prediction_log_tab()
+
+# Backward-compatible alias for older imports
+def render_live_trading_tab(data, signals=None):
+    return render_live_prediction_tab(data, signals)
