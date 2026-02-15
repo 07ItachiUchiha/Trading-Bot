@@ -13,7 +13,7 @@ from config import CAPITAL, RISK_PERCENT, MAX_CAPITAL_PER_TRADE, DEFAULT_SYMBOLS
 from .trading import (
     calculate_signals, plot_candlestick_chart
 )
-from .database import get_trades_from_db
+from .database import get_prediction_events_from_db
 
 def render_live_prediction_tab(data, signals=None):
     """Render a prediction-only live tab with no execution controls."""
@@ -85,57 +85,57 @@ def render_prediction_log_tab():
     st.subheader("Prediction Outcome Log")
     
     # Load historical outcomes from local database
-    trades_df = get_trades_from_db()
+    events_df = get_prediction_events_from_db()
     
-    if trades_df.empty:
+    if events_df.empty:
         st.info("No historical prediction outcomes available")
     else:
         # Create filters
         col1, col2, col3 = st.columns(3)
         with col1:
-            symbols = ['All'] + trades_df['symbol'].unique().tolist()
+            symbols = ['All'] + events_df['symbol'].unique().tolist()
             symbol_filter = st.selectbox("Filter by Symbol", symbols)
             
         with col2:
-            statuses = ['All'] + trades_df['status'].unique().tolist()
+            statuses = ['All'] + events_df['outcome_status'].unique().tolist()
             status_filter = st.selectbox("Filter by Outcome Status", statuses)
             
         with col3:
-            directions = ['All'] + trades_df['direction'].unique().tolist()
+            directions = ['All'] + events_df['predicted_direction'].unique().tolist()
             direction_filter = st.selectbox("Filter by Predicted Direction", directions)
         
         # Apply filters
-        filtered_df = trades_df.copy()
+        filtered_df = events_df.copy()
         
         if symbol_filter != 'All':
             filtered_df = filtered_df[filtered_df['symbol'] == symbol_filter]
             
         if status_filter != 'All':
-            filtered_df = filtered_df[filtered_df['status'] == status_filter]
+            filtered_df = filtered_df[filtered_df['outcome_status'] == status_filter]
             
         if direction_filter != 'All':
-            filtered_df = filtered_df[filtered_df['direction'] == direction_filter]
+            filtered_df = filtered_df[filtered_df['predicted_direction'] == direction_filter]
         
         # Calculate summary statistics
         if not filtered_df.empty:
-            closed_trades = filtered_df[filtered_df['status'] == 'closed']
+            resolved_events = filtered_df[filtered_df['outcome_status'] == 'closed']
             
-            if not closed_trades.empty:
-                total_pnl = closed_trades['pnl'].sum()
-                win_trades = closed_trades[closed_trades['pnl'] > 0]
-                loss_trades = closed_trades[closed_trades['pnl'] <= 0]
+            if not resolved_events.empty:
+                total_outcome = resolved_events['outcome_delta'].sum()
+                positive_events = resolved_events[resolved_events['outcome_delta'] > 0]
+                negative_events = resolved_events[resolved_events['outcome_delta'] <= 0]
                 
-                win_rate = len(win_trades) / len(closed_trades) * 100 if len(closed_trades) > 0 else 0
+                positive_rate = len(positive_events) / len(resolved_events) * 100 if len(resolved_events) > 0 else 0
                 
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.metric("Net Outcome", f"${total_pnl:.2f}")
+                    st.metric("Net Outcome", f"${total_outcome:.2f}")
                 with col2:
-                    st.metric("Positive Rate", f"{win_rate:.1f}%")
+                    st.metric("Positive Rate", f"{positive_rate:.1f}%")
                 with col3:
-                    st.metric("Positive Outcomes", f"{len(win_trades)}")
+                    st.metric("Positive Outcomes", f"{len(positive_events)}")
                 with col4:
-                    st.metric("Negative Outcomes", f"{len(loss_trades)}")
+                    st.metric("Negative Outcomes", f"{len(negative_events)}")
         
         # Format data for display
         display_df = filtered_df.copy()
@@ -146,19 +146,10 @@ def render_prediction_log_tab():
         )
         
         # Format times
-        display_df['entry_time'] = display_df['entry_time'].dt.strftime('%Y-%m-%d %H:%M')
-        display_df['exit_time'] = display_df['exit_time'].dt.strftime('%Y-%m-%d %H:%M')
+        display_df['signal_time'] = display_df['signal_time'].dt.strftime('%Y-%m-%d %H:%M')
+        display_df['resolution_time'] = display_df['resolution_time'].dt.strftime('%Y-%m-%d %H:%M')
         
-        # Reorder and relabel columns for prediction context
-        display_df = display_df.rename(columns={
-            'direction': 'predicted_direction',
-            'status': 'outcome_status',
-            'entry_price': 'baseline_price',
-            'exit_price': 'resolved_price',
-            'pnl': 'outcome_delta',
-            'entry_time': 'signal_time',
-            'exit_time': 'resolution_time',
-        })
+        # Reorder columns for prediction context
         columns_order = [
             'id', 'symbol', 'predicted_direction', 'outcome_status',
             'baseline_price', 'resolved_price', 'outcome_delta',
@@ -188,27 +179,27 @@ def render_performance_tab():
     """Render prediction performance analytics tab content."""
     st.subheader("Prediction Outcome Analytics")
     
-    # Get trades data
-    trades_df = get_trades_from_db()
-    closed_trades = trades_df[trades_df['status'] == 'closed'].copy()
+    # Get prediction event data
+    events_df = get_prediction_events_from_db()
+    resolved_events = events_df[events_df['outcome_status'] == 'closed'].copy()
     
-    if closed_trades.empty:
+    if resolved_events.empty:
         st.info("No resolved outcomes available for analysis")
         return
     
-    # Calculate daily PnL
-    closed_trades['date'] = closed_trades['exit_time'].dt.date
-    daily_pnl = closed_trades.groupby('date')['pnl'].sum().reset_index()
-    daily_pnl['cumulative_pnl'] = daily_pnl['pnl'].cumsum()
+    # Calculate daily outcome
+    resolved_events['date'] = resolved_events['resolution_time'].dt.date
+    daily_outcome = resolved_events.groupby('date')['outcome_delta'].sum().reset_index()
+    daily_outcome['cumulative_outcome'] = daily_outcome['outcome_delta'].cumsum()
     
     # Plot cumulative outcome
     st.subheader("Cumulative Outcome")
     import plotly.express as px
     
     fig = px.line(
-        daily_pnl,
+        daily_outcome,
         x='date',
-        y='cumulative_pnl',
+        y='cumulative_outcome',
         title='Cumulative Outcome Over Time'
     )
     fig.update_layout(
@@ -217,32 +208,36 @@ def render_performance_tab():
     )
     st.plotly_chart(fig, use_container_width=True)
     
-    # Trading stats
+    # Outcome stats
     col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("Outcome Statistics")
         
-        total_pnl = closed_trades['pnl'].sum()
-        win_trades = closed_trades[closed_trades['pnl'] > 0]
-        loss_trades = closed_trades[closed_trades['pnl'] <= 0]
+        total_outcome = resolved_events['outcome_delta'].sum()
+        positive_events = resolved_events[resolved_events['outcome_delta'] > 0]
+        negative_events = resolved_events[resolved_events['outcome_delta'] <= 0]
         
-        win_rate = len(win_trades) / len(closed_trades) * 100 if len(closed_trades) > 0 else 0
+        positive_rate = len(positive_events) / len(resolved_events) * 100 if len(resolved_events) > 0 else 0
         
-        avg_win = win_trades['pnl'].mean() if len(win_trades) > 0 else 0
-        avg_loss = loss_trades['pnl'].mean() if len(loss_trades) > 0 else 0
+        avg_positive = positive_events['outcome_delta'].mean() if len(positive_events) > 0 else 0
+        avg_negative = negative_events['outcome_delta'].mean() if len(negative_events) > 0 else 0
         
-        profit_factor = abs(win_trades['pnl'].sum() / loss_trades['pnl'].sum()) if len(loss_trades) > 0 and loss_trades['pnl'].sum() != 0 else 0
+        outcome_factor = (
+            abs(positive_events['outcome_delta'].sum() / negative_events['outcome_delta'].sum())
+            if len(negative_events) > 0 and negative_events['outcome_delta'].sum() != 0
+            else 0
+        )
         
         # Calculate max drawdown
-        running_pnl = closed_trades.sort_values('exit_time')['pnl'].cumsum()
+        running_outcome = resolved_events.sort_values('resolution_time')['outcome_delta'].cumsum()
         max_drawdown = 0
-        peak = running_pnl.iloc[0] if len(running_pnl) > 0 else 0
+        peak = running_outcome.iloc[0] if len(running_outcome) > 0 else 0
         
-        for pnl in running_pnl:
-            if pnl > peak:
-                peak = pnl
-            drawdown = peak - pnl
+        for outcome_value in running_outcome:
+            if outcome_value > peak:
+                peak = outcome_value
+            drawdown = peak - outcome_value
             if drawdown > max_drawdown:
                 max_drawdown = drawdown
         
@@ -253,9 +248,9 @@ def render_performance_tab():
                 'Avg Negative Outcome', 'Outcome Factor', 'Max Drawdown'
             ],
             'Value': [
-                f"${total_pnl:.2f}", f"{win_rate:.1f}%", str(len(closed_trades)),
-                str(len(win_trades)), str(len(loss_trades)), f"${avg_win:.2f}",
-                f"${avg_loss:.2f}", f"{profit_factor:.2f}", f"${max_drawdown:.2f}"
+                f"${total_outcome:.2f}", f"{positive_rate:.1f}%", str(len(resolved_events)),
+                str(len(positive_events)), str(len(negative_events)), f"${avg_positive:.2f}",
+                f"${avg_negative:.2f}", f"{outcome_factor:.2f}", f"${max_drawdown:.2f}"
             ]
         })
         
@@ -267,14 +262,14 @@ def render_performance_tab():
     with col2:
         st.subheader("Outcome by Symbol")
         
-        symbol_perf = closed_trades.groupby('symbol').agg({
-            'pnl': 'sum',
+        symbol_perf = resolved_events.groupby('symbol').agg({
+            'outcome_delta': 'sum',
             'id': 'count'
         }).reset_index()
         
         symbol_perf.columns = ['Symbol', 'Net Outcome', 'Resolved Signals']
         symbol_perf['Win Rate'] = [
-            f"{len(closed_trades[(closed_trades['symbol'] == symbol) & (closed_trades['pnl'] > 0)]) / count * 100:.1f}%"
+            f"{len(resolved_events[(resolved_events['symbol'] == symbol) & (resolved_events['outcome_delta'] > 0)]) / count * 100:.1f}%"
             for symbol, count in zip(symbol_perf['Symbol'], symbol_perf['Resolved Signals'])
         ]
         
@@ -284,15 +279,15 @@ def render_performance_tab():
     
     # Display monthly performance
     st.subheader("Monthly Outcome")
-    closed_trades['month'] = closed_trades['exit_time'].dt.strftime('%Y-%m')
-    monthly_perf = closed_trades.groupby('month').agg({
-        'pnl': 'sum',
+    resolved_events['month'] = resolved_events['resolution_time'].dt.strftime('%Y-%m')
+    monthly_perf = resolved_events.groupby('month').agg({
+        'outcome_delta': 'sum',
         'id': 'count'
     }).reset_index()
     
     monthly_perf.columns = ['Month', 'Net Outcome', 'Resolved Signals']
     monthly_perf['Win Rate'] = [
-        f"{len(closed_trades[(closed_trades['month'] == month) & (closed_trades['pnl'] > 0)]) / count * 100:.1f}%"
+        f"{len(resolved_events[(resolved_events['month'] == month) & (resolved_events['outcome_delta'] > 0)]) / count * 100:.1f}%"
         for month, count in zip(monthly_perf['Month'], monthly_perf['Resolved Signals'])
     ]
     
@@ -369,19 +364,6 @@ def render_settings_tab():
         st.session_state.earnings_weight = earnings_weight
         
         st.success("Prediction settings saved!")
-    
-    # Notification settings
-    st.subheader("Notification Settings")
-    notification_options = st.multiselect(
-        "Select notification channels",
-        options=["Telegram", "Discord", "Slack", "Console"],
-        default=st.session_state.get("notification_options", ["Console"]),
-        key="settings_notification_options"  # Add a unique key to fix duplicate element ID
-    )
-    
-    if st.button("Save Notification Settings"):
-        st.session_state.notification_options = notification_options
-        st.success("Notification settings saved!")
     
     # Strategy selection
     st.subheader("Strategy Settings")

@@ -42,7 +42,7 @@ This document tracks the cleanup effort that transformed the project from a lega
 
 - `prediction/engine.py`
 - `prediction/schema.py`
-- `strategy/auto_trading_manager.py`
+- `strategy/prediction_runtime_manager.py`
 - `utils/signal_processor.py`
 - `utils/sentiment_analyzer.py`
 - `utils/risk_management.py`

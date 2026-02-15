@@ -260,26 +260,29 @@ class TestDatabase(unittest.TestCase):
         """Set up test database"""
         self.test_db_path = tempfile.NamedTemporaryFile(delete=False, suffix='.db').name
     
-    def test_trade_storage(self):
-        """Test trade storage and retrieval"""
+    def test_prediction_event_storage(self):
+        """Test prediction event storage and retrieval."""
         try:
-            from dashboard.components.database import add_trade_to_db, get_trades_from_db
+            from dashboard.components.database import (
+                add_prediction_event_to_db,
+                get_prediction_events_from_db,
+            )
             
-            # Mock trade data
-            trade_data = {
+            # Mock prediction event data
+            event_data = {
                 'symbol': 'BTC/USD',
-                'direction': 'long',
-                'entry_price': 50000.0,
-                'size': 0.1,
-                'stop_loss': 49000.0,
+                'predicted_direction': 'buy',
+                'baseline_price': 50000.0,
+                'exposure_size': 0.1,
+                'reference_threshold': 49000.0,
                 'targets': [51000.0, 52000.0],
-                'status': 'open'
+                'outcome_status': 'open'
             }
             
             # This is a simplified test - in practice you'd mock the database
             # For now, just test that the functions exist and have correct signatures
-            self.assertTrue(callable(add_trade_to_db))
-            self.assertTrue(callable(get_trades_from_db))
+            self.assertTrue(callable(add_prediction_event_to_db))
+            self.assertTrue(callable(get_prediction_events_from_db))
             
         except ImportError:
             self.skipTest("Database components not available")

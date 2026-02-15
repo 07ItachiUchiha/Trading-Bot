@@ -349,7 +349,7 @@ class PredictionEngine:
             return result
 
         # Without an override there is nothing to add; the earnings strategy
-        # is used upstream in auto_trading_manager and passed in as override
+        # is used upstream in prediction_runtime_manager and passed in as override
         return result
 
     # ------------------------------------------------------------------

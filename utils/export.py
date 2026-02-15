@@ -58,14 +58,9 @@ def export_to_google_sheets(trades_df):
         # Write to CSV
         export_df.to_csv(file_path, index=False)
         
-        # Would use Google Sheets API in production
+        # TODO: Implement Google Sheets API integration with OAuth2 credentials
         logger.info(f"Trade history exported to CSV: {file_path}")
-        logger.info("Google Sheets integration needs OAuth2 creds + API setup")
-        
-        # Mock URL for demonstration
-        sheet_url = "https://docs.google.com/spreadsheets/d/example-sheet-id"
-        
-        return sheet_url
+        logger.warning("Google Sheets integration not yet implemented. Use CSV export for now.")
         
     except Exception as e:
         logger.error(f"Error exporting to Google Sheets: {str(e)}")

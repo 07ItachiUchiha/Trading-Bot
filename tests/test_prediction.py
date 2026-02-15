@@ -17,6 +17,11 @@ import pandas as pd
 # Ensure project root is on path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Keep acceptance tests deterministic and fast by disabling external LLM calls.
+os.environ["GEMINI_API_KEY"] = ""
+os.environ["OPENROUTER_API_KEY"] = ""
+os.environ["NVIDIA_API_KEY"] = ""
+
 from prediction.schema import Prediction
 from prediction.engine import PredictionEngine
 
@@ -232,8 +237,12 @@ class TestLLMIntegration:
     def test_no_key_raises(self):
         """Without API keys, calling should raise RuntimeError."""
         # Temporarily clear keys
-        old_gemini = os.environ.pop("GEMINI_API_KEY", None)
-        old_openrouter = os.environ.pop("OPENROUTER_API_KEY", None)
+        old_gemini = os.environ.get("GEMINI_API_KEY")
+        old_nvidia = os.environ.get("NVIDIA_API_KEY")
+        old_openrouter = os.environ.get("OPENROUTER_API_KEY")
+        os.environ["GEMINI_API_KEY"] = ""
+        os.environ["NVIDIA_API_KEY"] = ""
+        os.environ["OPENROUTER_API_KEY"] = ""
 
         from utils.llm_integration import get_llm_response
         try:
@@ -242,9 +251,19 @@ class TestLLMIntegration:
         except RuntimeError as e:
             assert "No LLM API key" in str(e)
         finally:
-            if old_gemini:
+            if old_gemini is None:
+                os.environ.pop("GEMINI_API_KEY", None)
+            else:
                 os.environ["GEMINI_API_KEY"] = old_gemini
-            if old_openrouter:
+
+            if old_nvidia is None:
+                os.environ.pop("NVIDIA_API_KEY", None)
+            else:
+                os.environ["NVIDIA_API_KEY"] = old_nvidia
+
+            if old_openrouter is None:
+                os.environ.pop("OPENROUTER_API_KEY", None)
+            else:
                 os.environ["OPENROUTER_API_KEY"] = old_openrouter
 
 

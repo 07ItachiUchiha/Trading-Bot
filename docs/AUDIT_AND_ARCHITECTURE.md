@@ -27,7 +27,7 @@ Market Data (REST/WebSocket) + News/Event Feeds
               v
  prediction/schema.py (contracted output)
               |
-              +--> strategy/auto_trading_manager.py (orchestration)
+              +--> strategy/prediction_runtime_manager.py (orchestration)
               +--> dashboard/components/market_data.py (display)
               +--> alerts/logging
 ```
@@ -38,7 +38,7 @@ Market Data (REST/WebSocket) + News/Event Feeds
 
 - `prediction/engine.py`
 - `prediction/schema.py`
-- `strategy/auto_trading_manager.py`
+- `strategy/prediction_runtime_manager.py`
 - `utils/signal_processor.py`
 - `utils/sentiment_analyzer.py`
 - `utils/risk_management.py`
@@ -96,4 +96,3 @@ This output contract is exercised in `tests/test_prediction.py`.
 
 - `python -m pytest tests/test_prediction.py -q` -> pass
 - `python -m pytest tests/test_suite.py -q` -> pass (with expected skips)
-

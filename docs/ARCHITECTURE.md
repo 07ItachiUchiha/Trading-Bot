@@ -36,7 +36,7 @@ Predictions are generated from technical + sentiment + event factors, then expos
 
 - `prediction/engine.py` — multi-factor prediction fusion
 - `prediction/schema.py` — prediction output dataclass contract
-- `strategy/auto_trading_manager.py` — runtime loop and signal orchestration
+- `strategy/prediction_runtime_manager.py` — runtime loop and signal orchestration
 
 ### Data and analytics utilities
 

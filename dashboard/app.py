@@ -18,7 +18,6 @@ import datetime
 sys.path.append(str(Path(__file__).parent.parent))
 
 # Import from components
-from dashboard.components.auth import authenticate
 from dashboard.components.database import ensure_db_exists
 from dashboard.components.dashboard_ui import (
     render_prediction_log_tab,
@@ -41,7 +40,6 @@ os.makedirs(os.path.join(Path(__file__).parent, "data"), exist_ok=True)
 
 # Initialize websocket managers globally
 ws_manager = None
-binance_ws_manager = None
 
 def initialize_websocket(provider='alpaca'):
     """Initialize WebSocket manager for real-time data"""
@@ -99,9 +97,6 @@ def main():
     # Set up the database
     ensure_db_exists()
     
-    # Check authentication
-    authenticate()
-    
     # Main page layout
     st.title("Market Prediction Dashboard")
     
@@ -111,7 +106,7 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        st.sidebar.subheader(f"Welcome, {st.session_state.user['username']}")
+        st.sidebar.subheader("Market Prediction Dashboard")
         
         # Data provider selection - only show Alpaca option
         data_provider = "alpaca"
@@ -154,15 +149,6 @@ def main():
             # Subscribe to real-time updates for this symbol
             if ws and auto_refresh:
                 ws.subscribe(symbol, handle_real_time_update)
-    
-        st.sidebar.title("Notifications")
-        notification_options = st.sidebar.multiselect(
-            "Select notification channels",
-            options=["Telegram", "Discord", "Slack", "Console"],
-            default=st.session_state.get("notification_options", ["Console"]),
-            key="sidebar_notification_options"
-        )
-        st.session_state.notification_options = notification_options
         
         # Display last update time if available
         if 'last_update_time' in st.session_state:

@@ -6,11 +6,18 @@ import sqlite3
 import os
 from pathlib import Path
 
-# Define DB_PATH properly
-DB_PATH = os.path.join(Path(__file__).parent.parent, "data", "trading_bot.db")
+try:
+    from dashboard.components.database import DB_PATH as PREDICTION_DB_PATH
+    DB_PATH = str(PREDICTION_DB_PATH)
+except Exception:
+    DB_PATH = os.path.join(Path(__file__).parent.parent, "data", "prediction_platform.db")
 
-# Secret key for JWT token
 SECRET_KEY = os.environ.get("JWT_SECRET", "")
+
+
+def _get_secret_key():
+    """Resolve JWT secret at runtime so env changes are respected."""
+    return os.environ.get("JWT_SECRET", SECRET_KEY)
 
 def login(username, password):
     """Authenticate a user"""
@@ -24,10 +31,13 @@ def login(username, password):
     # Create users table if it doesn't exist
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
         email TEXT UNIQUE,
+        api_key TEXT,
+        api_secret TEXT,
+        last_login TIMESTAMP,
         role TEXT NOT NULL DEFAULT 'user'
     )
     ''')
@@ -45,7 +55,8 @@ def login(username, password):
 
 def create_token(user):
     """Create JWT token for authenticated user"""
-    if not SECRET_KEY:
+    secret_key = _get_secret_key()
+    if not secret_key:
         raise RuntimeError("JWT_SECRET is not configured")
 
     expiration = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=1)
@@ -54,16 +65,17 @@ def create_token(user):
         "role": user["role"],
         "exp": expiration
     }
-    token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+    token = jwt.encode(payload, secret_key, algorithm="HS256")
     return token
 
 def verify_token(token):
     """Verify JWT token"""
-    if not SECRET_KEY:
+    secret_key = _get_secret_key()
+    if not secret_key:
         return None
 
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
         return payload
     except:
         return None

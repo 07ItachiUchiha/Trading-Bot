@@ -66,15 +66,11 @@ def initialize_analyzers():
 # Cache API responses to reduce API calls
 @lru_cache(maxsize=32)
 def fetch_historical_data(symbol, interval, limit=100, provider='alpaca'):
-    """Fetch historical price data from different providers"""
+    """Fetch historical price data (Alpaca-only in prediction mode)."""
     try:
-        if provider == 'alpaca':
-            return fetch_alpaca_data(symbol, interval, limit)
-        elif provider == 'binance':
-            return fetch_binance_data(symbol, interval, limit)
-        else:
-            st.error(f"Unsupported provider: {provider}")
-            return generate_demo_data(symbol, interval, limit)
+        if provider != 'alpaca':
+            logging.warning("Provider '%s' is not supported; using Alpaca.", provider)
+        return fetch_alpaca_data(symbol, interval, limit)
     except Exception as e:
         st.error(f"Error fetching data: {e}")
         print(f"Detailed error when fetching data: {traceback.format_exc()}")
@@ -175,80 +171,9 @@ def fetch_alpaca_data(symbol, interval, limit=100):
         return generate_demo_data(symbol, interval, limit)
 
 def fetch_binance_data(symbol, interval, limit=100):
-    """Fetch historical price data from Binance"""
-    try:
-        # Try to import binance client
-        try:
-            from binance.client import Client
-            binance_available = True
-        except ImportError:
-            binance_available = False
-            st.warning("Binance API not available. Install with: pip install python-binance")
-            
-        if binance_available:
-            # Format symbol for Binance (e.g., BTCUSDT)
-            formatted_symbol = symbol.replace('/', '').upper()
-            
-            # Map Streamlit interval options to Binance format
-            timeframe_dict = {
-                '1m': Client.KLINE_INTERVAL_1MINUTE,
-                '3m': Client.KLINE_INTERVAL_3MINUTE,
-                '5m': Client.KLINE_INTERVAL_5MINUTE,
-                '15m': Client.KLINE_INTERVAL_15MINUTE,
-                '30m': Client.KLINE_INTERVAL_30MINUTE,
-                '1h': Client.KLINE_INTERVAL_1HOUR,
-                '2h': Client.KLINE_INTERVAL_2HOUR,
-                '4h': Client.KLINE_INTERVAL_4HOUR,
-                '6h': Client.KLINE_INTERVAL_6HOUR,
-                '12h': Client.KLINE_INTERVAL_12HOUR,
-                '1d': Client.KLINE_INTERVAL_1DAY
-            }
-            binance_interval = timeframe_dict.get(interval, Client.KLINE_INTERVAL_1HOUR)
-            
-            # Initialize Binance client (no API keys needed for public data)
-            client = Client()
-            
-            # Fetch historical klines
-            klines = client.get_historical_klines(
-                formatted_symbol, 
-                binance_interval,
-                int((datetime.now() - timedelta(days=3)).timestamp() * 1000),  # Start from 3 days ago
-                int(datetime.now().timestamp() * 1000)  # Now
-            )
-            
-            # Convert to DataFrame
-            df = pd.DataFrame(klines, columns=[
-                'time', 'open', 'high', 'low', 'close', 
-                'volume', 'close_time', 'quote_asset_volume', 
-                'number_of_trades', 'taker_buy_base_asset_volume', 
-                'taker_buy_quote_asset_volume', 'ignore'
-            ])
-            
-            # Convert types
-            df['time'] = pd.to_datetime(df['time'], unit='ms')
-            df['open'] = df['open'].astype(float)
-            df['high'] = df['high'].astype(float)
-            df['low'] = df['low'].astype(float)
-            df['close'] = df['close'].astype(float)
-            df['volume'] = df['volume'].astype(float)
-            
-            # Keep only required columns
-            df = df[['time', 'open', 'high', 'low', 'close', 'volume']]
-            
-            # Limit to the requested number of rows
-            if len(df) > limit:
-                df = df.tail(limit)
-                
-            return df
-        else:
-            # Fall back to demo data
-            print("Binance API not available, generating demo data")
-            return generate_demo_data(symbol, interval, limit)
-            
-    except Exception as e:
-        st.error(f"Error fetching data from Binance: {e}")
-        print(f"Detailed error when fetching data: {traceback.format_exc()}")
-        return generate_demo_data(symbol, interval, limit)
+    """Legacy compatibility shim; prediction mode does not use Binance."""
+    logging.warning("Binance path is deprecated in prediction mode; using demo data.")
+    return generate_demo_data(symbol, interval, limit)
 
 def generate_demo_data(symbol, interval, limit=100, start_date=None, end_date=None):
     """Generate demo data for testing"""
@@ -598,8 +523,3 @@ def plot_candlestick_chart(df, signals=None):
     
     return fig
 
-# Force a rerun periodically to refresh the UI
-if not hasattr(st.session_state, 'last_rerun') or \
-   (datetime.now() - st.session_state.last_rerun).total_seconds() > 5:
-    st.session_state.last_rerun = datetime.now()
-    st.rerun()

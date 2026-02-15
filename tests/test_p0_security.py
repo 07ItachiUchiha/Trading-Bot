@@ -66,7 +66,7 @@ from utils import finnhub_webhook
 class TestP0Security(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.db_path = Path(self.temp_dir.name) / "trading_bot.db"
+        self.db_path = Path(self.temp_dir.name) / "prediction_platform.db"
 
     def tearDown(self):
         self.temp_dir.cleanup()
@@ -90,7 +90,7 @@ class TestP0Security(unittest.TestCase):
     def test_no_default_admin_without_bootstrap_env(self):
         with patch.object(database, "DB_PATH", self.db_path), patch.object(
             auth, "DB_PATH", str(self.db_path)
-        ), patch.dict(os.environ, {}, clear=False):
+        ), patch.dict(os.environ, {}, clear=True):
             database.ensure_db_exists()
             self.assertEqual(self._user_count(), 0)
             self.assertIsNone(self._find_user("admin"))
@@ -103,7 +103,7 @@ class TestP0Security(unittest.TestCase):
         }
         with patch.object(database, "DB_PATH", self.db_path), patch.object(
             auth, "DB_PATH", str(self.db_path)
-        ), patch.dict(os.environ, env, clear=False):
+        ), patch.dict(os.environ, env, clear=True):
             database.ensure_db_exists()
             database.ensure_db_exists()
             self.assertEqual(self._user_count(), 1)
@@ -112,7 +112,7 @@ class TestP0Security(unittest.TestCase):
     def test_admin_admin123_is_rejected_when_not_bootstrapped(self):
         with patch.object(database, "DB_PATH", self.db_path), patch.object(
             auth, "DB_PATH", str(self.db_path)
-        ), patch.dict(os.environ, {}, clear=False):
+        ), patch.dict(os.environ, {}, clear=True):
             database.ensure_db_exists()
             user = auth.login("admin", "admin123")
             self.assertIsNone(user)

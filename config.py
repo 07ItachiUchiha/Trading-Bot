@@ -10,10 +10,6 @@ API_SECRET = os.getenv('ALPACA_API_SECRET', '')
 NEWS_API_KEY = os.getenv('NEWS_API_KEY', '')
 ALPHAVANTAGE_API_KEY = os.getenv('ALPHAVANTAGE_API_KEY', '')
 FINNHUB_API_KEY = os.getenv('FINNHUB_API_KEY', '')
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN', '')
-TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
-DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL', '')
-SLACK_WEBHOOK_URL = os.getenv('SLACK_WEBHOOK_URL', '')
 
 # Webhook secrets
 FINNHUB_WEBHOOK_SECRET = os.getenv('FINNHUB_WEBHOOK_SECRET', '')
@@ -57,12 +53,9 @@ EARNINGS_WEIGHT = 0.6
 PRE_EVENT_DAYS = 3
 POST_EVENT_DAYS = 1
 
-# Notifications
-SEND_TELEGRAM_ALERTS = True
-SEND_DISCORD_ALERTS = False 
-SEND_SLACK_ALERTS = False
-ALERT_ON_SIGNALS = True
-ALERT_ON_TRADES = True
+# Notifications (disabled - use LLM rationale instead)
+ALERT_ON_SIGNALS = False
+ALERT_ON_TRADES = False
 
 # Watchlist
 WATCHLIST_CATEGORIES = {
@@ -91,3 +84,5 @@ OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
 LLM_MODEL = os.getenv('LLM_MODEL', 'meta-llama/llama-4-maverick:free')  # Default model
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.0-flash')
+NVIDIA_API_KEY = os.getenv('NVIDIA_API_KEY', '')
+NVIDIA_MODEL = os.getenv('NVIDIA_MODEL', 'minimaxai/minimax-m2.1')

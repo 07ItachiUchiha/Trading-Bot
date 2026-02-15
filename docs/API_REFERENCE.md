@@ -59,12 +59,12 @@ Behavior:
 
 ## Runtime Orchestration
 
-### `AutoTradingManager` (`strategy/auto_trading_manager.py`)
+### `PredictionRuntimeManager` (`strategy/prediction_runtime_manager.py`)
 
 Main runtime loop that updates data, computes signals, and emits predictions.
 
 ```python
-class AutoTradingManager:
+class PredictionRuntimeManager:
     def __init__(
         self,
         symbols,
@@ -83,7 +83,7 @@ class AutoTradingManager:
 
 Key methods:
 
-- `run()` - starts blocking trading/prediction loop.
+- `run()` - starts blocking prediction loop.
 - `run_cycle()` - runs one deterministic cycle over all symbols.
 - `stop()` - graceful shutdown.
 - `process_news_event(payload)` - webhook callback hook.

@@ -14,13 +14,10 @@ API_SECRET = os.getenv('ALPACA_API_SECRET', '')  # Alpaca API secret
 NEWS_API_KEY = os.getenv('NEWS_API_KEY', '')  # NewsAPI key
 ALPHAVANTAGE_API_KEY = os.getenv('ALPHAVANTAGE_API_KEY', '')  # AlphaVantage API key
 FINNHUB_API_KEY = os.getenv('FINNHUB_API_KEY', '')  # Finnhub API key
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN', '')
-TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
-DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL', '')
-SLACK_WEBHOOK_URL = os.getenv('SLACK_WEBHOOK_URL', '')
+
 
 # Webhook secrets
-FINNHUB_WEBHOOK_SECRET = os.getenv('FINNHUB_WEBHOOK_SECRET', 'your_webhook_secret')
+FINNHUB_WEBHOOK_SECRET = os.getenv('FINNHUB_WEBHOOK_SECRET', '')
 
 # General trading configuration
 SYMBOL = 'BTCUSD'  # Default symbol for backward compatibility

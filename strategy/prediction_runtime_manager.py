@@ -10,7 +10,7 @@ import pandas as pd
 from strategy.earnings_report_strategy import EarningsReportStrategy
 from strategy.news_strategy import NewsBasedStrategy
 from strategy.strategy import check_entry
-from utils.telegram_alert import send_alert
+# Notifications removed (use LLM rationale instead)
 from prediction.engine import PredictionEngine
 from prediction.schema import Prediction
 from config import (
@@ -29,8 +29,8 @@ except ImportError:
     tradeapi = None
 
 
-class AutoTradingManager:
-    """Manager for automated trading across multiple symbols."""
+class PredictionRuntimeManager:
+    """Manager for automated prediction runtime across multiple symbols."""
 
     def __init__(
         self,
@@ -46,7 +46,7 @@ class AutoTradingManager:
         earnings_weight=0.6,
         signal_only=True,
     ):
-        self.logger = logging.getLogger("auto_trading_manager")
+        self.logger = logging.getLogger("prediction_runtime_manager")
         self.setup_logging()
 
         self.symbols = [self._normalize_symbol(s) for s in (symbols or DEFAULT_SYMBOLS)]
@@ -72,16 +72,41 @@ class AutoTradingManager:
 
         self.running = False
         self.dataframes = {}
-        self.active_trades = {}
+        self.active_predictions = {}
         self.daily_pnl = 0.0
         self.total_pnl = 0.0
         self.last_signal = {}
-        self.symbols_trading_halted = {}
+        self.symbols_analysis_halted = {}
 
         self.sentiment_signals = {}
         self.earnings_signals = {}
         self.last_sentiment_refresh = {}
         self.pending_event_symbols = set()
+
+        for symbol in self.symbols:
+            self.dataframes[symbol] = None
+            self.last_signal[symbol] = {
+                "symbol": symbol,
+                "timestamp": datetime.now().isoformat(),
+                "combined": {
+                    "signal": "neutral",
+                    "confidence": 0.0,
+                    "reasoning": "not analyzed yet",
+                },
+            }
+            self.sentiment_signals[symbol] = {
+                "signal": "neutral",
+                "confidence": 0.0,
+                "reasoning": "not analyzed yet",
+                "raw": {},
+            }
+            self.earnings_signals[symbol] = {
+                "signal": "neutral",
+                "confidence": 0.0,
+                "reasoning": "not analyzed yet",
+                "raw": {},
+            }
+            self.symbols_analysis_halted[symbol] = False
 
         self.news_strategy = NewsBasedStrategy() if self.use_news else None
         self.earnings_strategy = EarningsReportStrategy() if self.use_earnings else None
@@ -102,7 +127,7 @@ class AutoTradingManager:
         self._init_alpaca_client()
 
         self.logger.info(
-            "Auto trading manager initialized | symbols=%s timeframe=%s signal_only=%s",
+            "Prediction runtime manager initialized | symbols=%s timeframe=%s signal_only=%s",
             self.symbols,
             self.timeframe,
             self.signal_only,
@@ -118,7 +143,7 @@ class AutoTradingManager:
         formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
         file_handler = logging.FileHandler(
-            f"logs/auto_trading_{datetime.now().strftime('%Y%m%d')}.log"
+            f"logs/prediction_runtime_{datetime.now().strftime('%Y%m%d')}.log"
         )
         file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(formatter)
@@ -195,9 +220,9 @@ class AutoTradingManager:
         return mapping.get(tf.lower(), tf)
 
     def run(self):
-        """Run the auto trading manager in an infinite loop."""
+        """Run the prediction runtime manager in an infinite loop."""
         self.running = True
-        self.logger.info("Starting auto trading manager")
+        self.logger.info("Starting prediction runtime manager")
 
         for symbol in self.symbols:
             self._load_historical_data(symbol)
@@ -206,21 +231,21 @@ class AutoTradingManager:
             try:
                 self.run_cycle()
             except Exception as exc:
-                self.logger.error("Error in auto trading cycle: %s", exc)
+                self.logger.error("Error in prediction cycle: %s", exc)
                 traceback.print_exc()
 
             if self.running:
                 time.sleep(60)
 
-        self.logger.info("Auto trading manager stopped")
+        self.logger.info("Prediction runtime manager stopped")
 
     def run_cycle(self):
-        """Process one deterministic trading cycle for all symbols."""
+        """Process one deterministic prediction cycle for all symbols."""
         cycle_results = {}
 
         for symbol in self.symbols:
-            if self.symbols_trading_halted.get(symbol, False):
-                self.logger.warning("Trading for %s is halted, skipping", symbol)
+            if self.symbols_analysis_halted.get(symbol, False):
+                self.logger.warning("Analysis for %s is halted, skipping", symbol)
                 continue
 
             try:
@@ -244,9 +269,9 @@ class AutoTradingManager:
         return cycle_results
 
     def stop(self):
-        """Stop the auto trading manager."""
+        """Stop the prediction runtime manager."""
         self.running = False
-        self.logger.info("Stopping auto trading manager")
+        self.logger.info("Stopping prediction runtime manager")
 
     def _fetch_alpaca_crypto_bars(self, symbol, days_back=7):
         """Fetch crypto bars from Alpaca and return a normalized dataframe."""
@@ -291,66 +316,24 @@ class AutoTradingManager:
         try:
             df = self._fetch_alpaca_crypto_bars(symbol, days_back=7)
             if df is None or df.empty:
-                df = self._generate_mock_data(symbol)
+                self.logger.warning(
+                    "Falling back to synthetic data for %s (live data unavailable)",
+                    symbol,
+                )
+                df = self._generate_synthetic_data(symbol, days_back=7)
 
             if df is None or df.empty:
-                self.symbols_trading_halted[symbol] = True
-                self.logger.error("Failed to load any data for %s; halting symbol", symbol)
-                return False
+                raise RuntimeError(
+                    f"Failed to load data for {symbol}. Live and synthetic sources both unavailable."
+                )
 
             self.dataframes[symbol] = df
-            self.symbols_trading_halted[symbol] = False
+            self.symbols_analysis_halted[symbol] = False
             return True
         except Exception as exc:
             self.logger.error("Error loading historical data for %s: %s", symbol, exc)
-            self.symbols_trading_halted[symbol] = True
+            self.symbols_analysis_halted[symbol] = True
             return False
-
-    def _generate_mock_data(self, symbol):
-        """Generate mock price data for testing when API fails."""
-        try:
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=7)
-            num_candles = 168
-            dates = pd.date_range(start=start_date, end=end_date, periods=num_candles)
-
-            if "BTC" in symbol:
-                base_price = 65000
-            elif "ETH" in symbol:
-                base_price = 3500
-            elif "BNB" in symbol:
-                base_price = 600
-            elif "SOL" in symbol:
-                base_price = 150
-            elif "ADA" in symbol:
-                base_price = 0.5
-            elif "DOGE" in symbol:
-                base_price = 0.15
-            elif "XAU" in symbol or "GOLD" in symbol:
-                base_price = 2400
-            else:
-                base_price = 100
-
-            np.random.seed(42)
-            price_changes = np.random.normal(0, base_price * 0.01, num_candles)
-            prices = base_price + np.cumsum(price_changes)
-            prices = np.maximum(prices, base_price * 0.5)
-
-            mock_data = pd.DataFrame(
-                {
-                    "timestamp": dates,
-                    "open": prices * (1 - 0.005 * np.random.random(num_candles)),
-                    "high": prices * (1 + 0.01 * np.random.random(num_candles)),
-                    "low": prices * (1 - 0.01 * np.random.random(num_candles)),
-                    "close": prices,
-                    "volume": np.random.randint(100, 10000, num_candles),
-                }
-            )
-            mock_data = mock_data.set_index("timestamp")
-            return mock_data
-        except Exception as exc:
-            self.logger.error("Error generating mock data for %s: %s", symbol, exc)
-            return None
 
     def _update_candles(self, symbol):
         """Update candle data for a specific symbol."""
@@ -605,10 +588,6 @@ class AutoTradingManager:
                 f"(confidence={confidence:.2f}) | {combined['reasoning']}"
             )
             self.logger.info(message)
-            try:
-                send_alert(message)
-            except Exception as exc:
-                self.logger.warning("Failed to send alert for %s: %s", symbol, exc)
 
             if self.signal_only:
                 self.logger.info("Signal-only mode enabled. No order placement for %s.", symbol)
@@ -632,6 +611,12 @@ class AutoTradingManager:
         data = payload.get("data")
         if isinstance(data, dict) and isinstance(data.get("symbol"), str):
             symbols.append(data["symbol"])
+        elif isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict):
+                    for field in ("symbol", "ticker", "code"):
+                        if isinstance(item.get(field), str):
+                            symbols.append(item[field])
 
         # Finnhub earnings payloads can carry ticker-like fields.
         for field in ("ticker", "code"):
@@ -733,9 +718,9 @@ class AutoTradingManager:
             self.logger.error("Error generating synthetic data for %s: %s", symbol, exc)
             return None
 
-    def get_active_trades(self):
-        """Get list of active trades."""
-        return list(self.active_trades.values())
+    def get_active_predictions(self):
+        """Get list of active prediction records."""
+        return list(self.active_predictions.values())
 
     def get_last_signal(self):
         """Get the last generated signals by symbol."""
@@ -744,6 +729,10 @@ class AutoTradingManager:
     def get_current_pnl(self):
         """Get current total PnL."""
         return self.total_pnl
+
+    def get_active_trades(self):
+        """Backward-compatible alias for legacy callers."""
+        return self.get_active_predictions()
 
     def get_latest_predictions(self):
         """Get the most recent Prediction object for each symbol."""

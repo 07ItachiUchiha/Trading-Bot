@@ -126,11 +126,10 @@ class MarketDataManager:
     
     def _fetch_from_alpaca(self, symbol, timeframe, limit):
         """Fetch historical data from Alpaca with retries and caching."""
+        if self.alpaca is None:
+            raise RuntimeError(f"Cannot fetch data for {symbol}: Alpaca API not initialized or API key missing")
+        
         try:
-            if self.alpaca is None:
-                self.logger.error(f"Cannot fetch data for {symbol}: Alpaca API not initialized")
-                return self._generate_mock_data(symbol, timeframe, limit)
-            
             # Calculate start and end times based on limit and timeframe
             end_date = datetime.now()
             minutes = self.config['timeframe_minutes'].get(timeframe, 60) * limit
@@ -148,115 +147,53 @@ class MarketDataManager:
             # Determine if symbol is crypto
             is_crypto = 'USD' in symbol and not symbol.endswith('USD=X')
             
-            try:
-                if is_crypto:
-                    # Get crypto data with error handling
-                    bars = self.alpaca.get_crypto_bars(
-                        symbol=formatted_symbol,  # Use formatted symbol
-                        timeframe=timeframe,
-                        start=start_str,
-                        end=end_str
-                    ).df
-                else:
-                    # Get stock data with error handling
-                    bars = self.alpaca.get_bars(
-                        symbol=formatted_symbol,  # Use formatted symbol
-                        timeframe=timeframe,
-                        start=start_str,
-                        end=end_str
-                    ).df
-                
-                # Process the data
-                if bars is not None and not bars.empty:
-                    # Reset index to get datetime as a column
-                    bars = bars.reset_index()
-                    # Rename columns to match expected format
-                    bars = bars.rename(columns={
-                        'timestamp': 'datetime', 
-                        'open': 'open', 
-                        'high': 'high', 
-                        'low': 'low', 
-                        'close': 'close',
-                        'volume': 'volume'
-                    })
-                    
-                    # Ensure datetime format is consistent
-                    bars['datetime'] = pd.to_datetime(bars['datetime'])
-                    
-                    # Cache the data
-                    self._save_to_disk_cache(symbol, timeframe, bars)
-                    
-                    self.logger.info(f"Successfully fetched {len(bars)} bars for {symbol}")
-                    return bars
-                else:
-                    self.logger.warning(f"No data returned for {symbol} with timeframe {timeframe}")
-                    return self._generate_mock_data(symbol, timeframe, limit)
+            if is_crypto:
+                # Get crypto data with error handling
+                bars = self.alpaca.get_crypto_bars(
+                    symbol=formatted_symbol,  # Use formatted symbol
+                    timeframe=timeframe,
+                    start=start_str,
+                    end=end_str
+                ).df
+            else:
+                # Get stock data with error handling
+                bars = self.alpaca.get_bars(
+                    symbol=formatted_symbol,  # Use formatted symbol
+                    timeframe=timeframe,
+                    start=start_str,
+                    end=end_str
+                ).df
             
-            except Exception as e:
-                self.logger.error(f"Error fetching data for {symbol}: {e}")
-                # If we get an error, try with mock data
-                return self._generate_mock_data(symbol, timeframe, limit)
+            # Process the data
+            if bars is not None and not bars.empty:
+                # Reset index to get datetime as a column
+                bars = bars.reset_index()
+                # Rename columns to match expected format
+                bars = bars.rename(columns={
+                    'timestamp': 'datetime', 
+                    'open': 'open', 
+                    'high': 'high', 
+                    'low': 'low', 
+                    'close': 'close',
+                    'volume': 'volume'
+                })
+                
+                # Ensure datetime format is consistent
+                bars['datetime'] = pd.to_datetime(bars['datetime'])
+                
+                # Cache the data
+                self._save_to_disk_cache(symbol, timeframe, bars)
+                
+                self.logger.info(f"Successfully fetched {len(bars)} bars for {symbol}")
+                return bars
+            else:
+                raise RuntimeError(f"No data returned for {symbol}. Check API key configuration and market hours.")
                 
         except Exception as e:
-            self.logger.error(f"Unexpected error in _fetch_from_alpaca for {symbol}: {e}")
-            return self._generate_mock_data(symbol, timeframe, limit)
+            self.logger.error(f"Failed to fetch data for {symbol}: {e}")
+            raise
     
-    def _generate_mock_data(self, symbol, timeframe, limit):
-        """Generate fake price data when the API is down so the bot doesn't crash."""
-        self.logger.info(f"Generating mock data for {symbol} with {timeframe} timeframe")
-        
-        # Current time
-        end_date = datetime.now()
-        
-        # Calculate minutes per bar based on timeframe
-        minutes_per_bar = self.config['timeframe_minutes'].get(timeframe, 60)
-        
-        # Calculate start date
-        start_date = end_date - timedelta(minutes=minutes_per_bar * limit)
-        
-        # Generate dates
-        dates = pd.date_range(start=start_date, end=end_date, periods=limit)
-        
-        # Base price based on symbol with added XAU/USD support
-        if 'BTC' in symbol:
-            base_price = 65000  # BTC base price
-        elif 'ETH' in symbol:
-            base_price = 3500   # ETH base price
-        elif 'SOL' in symbol:
-            base_price = 150    # SOL base price
-        elif 'ADA' in symbol:
-            base_price = 0.5    # ADA base price
-        elif 'DOGE' in symbol:
-            base_price = 0.15   # DOGE base price
-        elif 'XAU' in symbol or 'GOLD' in symbol:
-            base_price = 2400   # Gold price in USD
-            volatility_factor = 0.005  # Lower volatility for gold
-        else:
-            base_price = 100    # Default price
-        
-        # Determine volatility factor based on asset type
-        volatility_factor = 0.01  # Default 1% standard deviation
-        if 'XAU' in symbol or 'GOLD' in symbol:
-            volatility_factor = 0.005  # Gold is less volatile (0.5%)
-        
-        # Generate price with some randomness and appropriate volatility
-        np.random.seed(42)  # For reproducibility
-        price_changes = np.random.normal(0, base_price * volatility_factor, limit)
-        prices = base_price + np.cumsum(price_changes)
-        prices = np.maximum(prices, base_price * 0.5)  # Ensure prices don't go too low
-        
-        # Create DataFrame
-        mock_data = pd.DataFrame({
-            'datetime': dates,
-            'open': prices * (1 - 0.005 * np.random.random(limit)),
-            'high': prices * (1 + 0.01 * np.random.random(limit)),
-            'low': prices * (1 - 0.01 * np.random.random(limit)),
-            'close': prices,
-            'volume': np.random.randint(100, 10000, limit)
-        })
-        
-        self.logger.info(f"Generated mock data for {symbol}: {len(mock_data)} bars")
-        return mock_data
+
     
     def _save_to_disk_cache(self, symbol, timeframe, data):
         """Persist market data to a CSV file."""

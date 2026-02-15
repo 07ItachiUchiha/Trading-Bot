@@ -10,7 +10,7 @@ import logging
 # Add parent directory to path to import modules
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from strategy.auto_trading_manager import AutoTradingManager
+from strategy.prediction_runtime_manager import PredictionRuntimeManager
 from config import DEFAULT_SYMBOLS, CAPITAL, RISK_PERCENT, PROFIT_TARGET_PERCENT, DAILY_PROFIT_TARGET_PERCENT
 
 def setup_logging():
@@ -29,7 +29,7 @@ def setup_logging():
         ]
     )
     
-    return logging.getLogger('run_auto_trader')
+    return logging.getLogger('run_prediction_engine')
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Run automated market prediction runtime.')
@@ -78,7 +78,7 @@ def main():
     logger.info(f"Symbols: {symbols} | Capital: ${args.capital} | Risk: {args.risk_percent}%")
     
     try:
-        trader = AutoTradingManager(
+        runtime_manager = PredictionRuntimeManager(
             symbols=symbols,
             timeframe=args.timeframe,
             capital=args.capital,
@@ -91,7 +91,7 @@ def main():
             earnings_weight=args.earnings_weight
         )
         
-        trader.run()
+        runtime_manager.run()
         
     except KeyboardInterrupt:
         logger.info("Prediction runtime stopped by user")

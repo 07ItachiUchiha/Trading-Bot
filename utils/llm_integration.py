@@ -11,10 +11,12 @@ def get_llm_response(prompt, model=None):
 
     Priority order:
         1. Google Gemini (free tier, 15 RPM)
-        2. OpenRouter (free models available)
+        2. NVIDIA NIM (via OpenAI-compatible API)
+        3. OpenRouter (free models available)
 
     Set the provider via env vars:
-        GEMINI_API_KEY   -> enables Gemini
+        GEMINI_API_KEY    -> enables Gemini
+        NVIDIA_API_KEY    -> enables NVIDIA NIM
         OPENROUTER_API_KEY -> enables OpenRouter
     """
 
@@ -24,7 +26,15 @@ def get_llm_response(prompt, model=None):
         try:
             return _call_gemini(prompt, gemini_key, model)
         except Exception as exc:
-            logger.warning("Gemini call failed, falling back to OpenRouter: %s", exc)
+            logger.warning("Gemini call failed, trying NVIDIA: %s", exc)
+
+    # Try NVIDIA NIM second
+    nvidia_key = os.getenv("NVIDIA_API_KEY", "")
+    if nvidia_key:
+        try:
+            return _call_nvidia(prompt, nvidia_key, model)
+        except Exception as exc:
+            logger.warning("NVIDIA call failed, falling back to OpenRouter: %s", exc)
 
     # Fallback to OpenRouter
     openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
@@ -32,7 +42,7 @@ def get_llm_response(prompt, model=None):
         return _call_openrouter(prompt, openrouter_key, model)
 
     raise RuntimeError(
-        "No LLM API key configured. Set GEMINI_API_KEY or OPENROUTER_API_KEY."
+        "No LLM API key configured. Set GEMINI_API_KEY, NVIDIA_API_KEY, or OPENROUTER_API_KEY."
     )
 
 
@@ -71,6 +81,51 @@ def _call_gemini(prompt, api_key, model=None):
         raise RuntimeError("Gemini returned empty response")
 
     return text.strip()
+
+
+def _call_nvidia(prompt, api_key, model=None):
+    """
+    Call NVIDIA NIM API via OpenAI-compatible endpoint.
+
+    NVIDIA provides an OpenAI-compatible REST API at https://integrate.api.nvidia.com/v1
+    This implementation uses native requests library for consistency.
+    """
+    model = model or os.getenv("NVIDIA_MODEL", "minimaxai/minimax-m2.1")
+    
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.4,
+        "top_p": 0.95,
+        "max_tokens": 512,
+    }
+    
+    try:
+        resp = requests.post(
+            "https://integrate.api.nvidia.com/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=15,
+        )
+        
+        if resp.status_code != 200:
+            raise RuntimeError(f"NVIDIA API error {resp.status_code}: {resp.text[:200]}")
+        
+        data = resp.json()
+        response_text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        
+        if not response_text.strip():
+            raise RuntimeError("NVIDIA returned empty response")
+        
+        return response_text.strip()
+        
+    except requests.exceptions.RequestException as exc:
+        raise RuntimeError(f"NVIDIA API request failed: {str(exc)[:200]}")
 
 
 def _call_openrouter(prompt, api_key, model=None):

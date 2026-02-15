@@ -16,11 +16,13 @@ python setup_check.py
 ### Config
 
 1. Copy the example config:
+
    ```bash
    cp config_example.py config.py
    ```
 
 2. Fill in your API keys in `config.py`:
+
    ```python
    API_KEY = "your_alpaca_key"
    API_SECRET = "your_alpaca_secret"
@@ -37,13 +39,15 @@ python setup_check.py
 ### Running
 
 Dashboard mode (recommended for getting started):
+
 ```bash
 streamlit run dashboard/app.py
 ```
 
 Headless prediction runtime:
+
 ```bash
-python run_auto_trader.py --symbols BTC/USD ETH/USD --capital 10000
+python run_prediction_engine.py --symbols BTC/USD ETH/USD --capital 10000
 ```
 
 ---
@@ -51,6 +55,7 @@ python run_auto_trader.py --symbols BTC/USD ETH/USD --capital 10000
 ## Production (Linux server)
 
 ### Requirements
+
 - 2+ cores, 4GB RAM minimum
 - Python 3.8+
 - Stable internet
@@ -71,6 +76,7 @@ pip install -r requirements.txt
 ### Systemd service
 
 Create `/etc/systemd/system/predictionbot.service`:
+
 ```ini
 [Unit]
 Description=Market Prediction Service
@@ -82,13 +88,14 @@ Restart=always
 RestartSec=1
 User=predictionbot
 WorkingDirectory=/home/predictionbot/market-prediction-platform
-ExecStart=/home/predictionbot/market-prediction-platform/venv/bin/python run_auto_trader.py
+ExecStart=/home/predictionbot/market-prediction-platform/venv/bin/python run_prediction_engine.py
 
 [Install]
 WantedBy=multi-user.target
 ```
 
 Then:
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable predictionbot
@@ -105,6 +112,7 @@ sudo chown predictionbot:predictionbot /var/log/predictionbot
 ```
 
 Set up logrotate at `/etc/logrotate.d/predictionbot`:
+
 ```
 /var/log/predictionbot/*.log {
     daily
@@ -126,9 +134,10 @@ sudo ufw allow 8501/tcp  # dashboard
 ### Backups
 
 Back up config and the SQLite DB regularly:
+
 ```bash
 tar -czf ~/backups/config_$(date +%Y%m%d).tar.gz config.py data/
-cp dashboard/data/trading_bot.db ~/backups/prediction_runtime_$(date +%Y%m%d).db
+cp dashboard/data/prediction_platform.db ~/backups/prediction_runtime_$(date +%Y%m%d).db
 ```
 
 ---
@@ -136,12 +145,14 @@ cp dashboard/data/trading_bot.db ~/backups/prediction_runtime_$(date +%Y%m%d).db
 ## Troubleshooting
 
 **Service won't start:**
+
 ```bash
 sudo journalctl -u predictionbot -f
 ```
 
 **API errors:**
 Double check your keys in config.py. Try:
+
 ```bash
 python -c "from config import API_KEY; print(bool(API_KEY))"
 ```
@@ -150,6 +161,7 @@ python -c "from config import API_KEY; print(bool(API_KEY))"
 Check signal thresholds and data connectivity. The runtime will stay neutral if confidence is too low.
 
 **Logs:**
+
 ```bash
 tail -f logs/prediction_*.log
 ```

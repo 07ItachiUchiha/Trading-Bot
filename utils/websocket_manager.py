@@ -439,8 +439,10 @@ class WebSocketManager:
             if symbol and ('XAU' in symbol or 'GOLD' in symbol):
                 if 'price' in result and result['price'] == 0:
                     from dashboard.xau_handler import get_xau_usd_price
-                    result['price'] = get_xau_usd_price()
-                    logger.info(f"Replaced zero XAU price with mock data: {result['price']}")
+                    try:
+                        result['price'] = get_xau_usd_price()
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch XAU price: {e}")
                     
             return result
         except Exception as e:

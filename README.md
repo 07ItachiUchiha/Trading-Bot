@@ -13,7 +13,6 @@ Built as a research project exploring how to fuse diverse market signals (quanti
 - **LLM integration**: Uses Google Gemini (free tier) or OpenRouter for generating human-readable prediction rationale
 - **Guardrails**: Confidence-weighting, volatility flags, and configurable exposure limits
 - **Dashboard**: Streamlit web UI for live monitoring, charts, prediction logs, and explainability
-- **Alerts**: Telegram/Discord/Slack notifications on actionable predictions
 
 ## Prediction Output
 
@@ -89,10 +88,10 @@ streamlit run dashboard/app.py
 **Headless prediction runner** (CLI):
 
 ```bash
-python run_auto_trader.py
+python run_prediction_engine.py
 
 # With custom params:
-python run_auto_trader.py --symbols BTC/USD ETH/USD --capital 10000 --risk-percent 1.5
+python run_prediction_engine.py --symbols BTC/USD ETH/USD --capital 10000 --risk-percent 1.5
 ```
 
 **Run tests**:
@@ -114,7 +113,7 @@ project/
 │   ├── pages/                    # Sub-pages (prediction, news, analytics)
 │   └── components/               # Reusable UI components
 ├── strategy/                      # Signal strategy modules
-│   ├── auto_trading_manager.py   # Main prediction loop (uses prediction engine)
+│   ├── prediction_runtime_manager.py   # Main prediction loop (uses prediction engine)
 │   ├── multiple_strategies.py    # Pluggable strategy framework
 │   ├── news_strategy.py          # Sentiment-based signals
 │   └── earnings_report_strategy.py # Event-driven signals
@@ -129,7 +128,7 @@ project/
 ├── tests/                         # Test suite
 ├── docs/                          # Architecture, audit, cleanup docs
 ├── config.py                      # Main configuration (env vars)
-├── run_auto_trader.py            # Entry point (headless prediction mode)
+├── run_prediction_engine.py      # Entry point (headless prediction mode)
 ├── run_bot.py                    # Entry point (dashboard)
 └── README.md                      # This file
 ```
@@ -210,7 +209,7 @@ The project has been repositioned from a basic crypto execution bot into a **fas
 ✅ **Upgraded LLM** - Gemini (primary) + OpenRouter (fallback) with intelligent fallback  
 ✅ **Cleaned codebase** - Removed legacy/dead paths and finalized duplicate-module cleanup  
 ✅ **Fixed 10 P0 bugs** - Syntax errors, undefined variables, broken imports  
-✅ **Wired auto_trading_manager** - Now produces structured Predictions alongside legacy signals
+✅ **Wired prediction_runtime_manager** - Now produces structured Predictions alongside legacy signals
 
 See [AUDIT_AND_ARCHITECTURE.md](docs/AUDIT_AND_ARCHITECTURE.md) for full technical details on audit, bugs, and architectural changes.
 

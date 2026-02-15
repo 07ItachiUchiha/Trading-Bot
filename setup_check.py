@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Trading Bot Setup and Validation Script
-Checks dependencies, API keys, and system configuration
+Prediction Platform Setup and Validation Script
+Checks dependencies, API keys, and system configuration.
 """
 
 import sys
@@ -27,12 +27,12 @@ def check_dependencies():
     
     required_packages = [
         'pandas', 'numpy', 'streamlit', 'plotly', 'requests',
-        'alpaca_trade_api', 'binance', 'nltk', 'textblob',
-        'pandas_ta', 'websocket', 'flask', 'python_dotenv'
+        'alpaca_trade_api', 'nltk', 'textblob',
+        'websocket', 'flask', 'python_dotenv'
     ]
     
     optional_packages = [
-        'discord_webhook', 'slack_sdk', 'jwt'
+        'jwt'
     ]
     
     missing_required = []
@@ -61,7 +61,7 @@ def check_dependencies():
     
     if missing_optional:
         print(f"\nMissing optional packages: {', '.join(missing_optional)}")
-        print("Install with: pip install discord-webhook slack-sdk PyJWT")
+        print("Install with: pip install PyJWT")
     
     return True
 
@@ -158,14 +158,7 @@ def test_imports():
         
         import alpaca_trade_api
         print("  Alpaca API OK")
-        
-        try:
-            import pandas_ta
-            print("  Pandas-TA OK")
-        except ImportError:
-            print("  Pandas-TA import failed")
-            return False
-        
+
         return True
         
     except ImportError as e:
@@ -195,7 +188,7 @@ def run_basic_tests():
 
 def main():
     """Run all the checks and print a summary."""
-    print("Trading Bot Setup Validation")
+    print("Prediction Platform Setup Validation")
     print("=" * 50)
     
     checks = [
@@ -230,11 +223,11 @@ def main():
     
     print("\n" + "=" * 50)
     if all_passed:
-        print("All checks passed. Bot is ready to run.")
+        print("All checks passed. Prediction platform is ready to run.")
         print("\nNext steps:")
         print("1. Fill in your API keys in .env file")
         print("2. Run the dashboard: streamlit run dashboard/app.py")
-        print("3. Or run the bot: python run_bot.py")
+        print("3. Or run the runtime: python run_prediction_engine.py")
     else:
         print("Some checks failed. Fix the issues above before running.")
         print("\nCommon fixes:")

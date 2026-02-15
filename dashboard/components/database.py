@@ -4,21 +4,77 @@ import datetime
 import json
 import os
 import sys
+import shutil
 from pathlib import Path
 import bcrypt
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-# Database path
-DB_PATH = Path(__file__).parent.parent / "data" / "trading_bot.db"
+# Database paths
+DB_DIR = Path(__file__).parent.parent / "data"
+DB_PATH = DB_DIR / "prediction_platform.db"
+
+
+def _bootstrap_database_file():
+    """Move/copy legacy DB into the new prediction DB location when needed."""
+    target_dir = DB_PATH.parent
+    if not target_dir.exists():
+        os.makedirs(target_dir)
+
+    legacy_db_path = target_dir / "trading_bot.db"
+
+    if not DB_PATH.exists() and legacy_db_path.exists():
+        shutil.copy2(legacy_db_path, DB_PATH)
+
+
+def _legacy_trades_table_exists(cursor):
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='trades'"
+    )
+    return cursor.fetchone() is not None
+
+
+def _migrate_legacy_trades_to_prediction_events(cursor):
+    """Migrate legacy `trades` rows into `prediction_events` once."""
+    if not _legacy_trades_table_exists(cursor):
+        return
+
+    cursor.execute("SELECT COUNT(*) FROM prediction_events")
+    prediction_events_count = cursor.fetchone()[0]
+    if prediction_events_count > 0:
+        return
+
+    cursor.execute(
+        """
+        INSERT INTO prediction_events (
+            id, symbol, predicted_direction, baseline_price, resolved_price,
+            reference_threshold, targets, exposure_size, signal_time,
+            resolution_time, outcome_delta, outcome_status
+        )
+        SELECT
+            id, symbol, direction, entry_price, exit_price,
+            stop_loss, targets, size, entry_time,
+            exit_time, pnl, status
+        FROM trades
+        """
+    )
 
 
 def _bootstrap_admin_if_configured(cursor):
     """Create a bootstrap admin only when explicit env vars are provided."""
-    username = os.environ.get("TRADING_BOT_BOOTSTRAP_ADMIN_USERNAME", "").strip()
-    password = os.environ.get("TRADING_BOT_BOOTSTRAP_ADMIN_PASSWORD", "").strip()
-    email = os.environ.get("TRADING_BOT_BOOTSTRAP_ADMIN_EMAIL", "admin@localhost").strip()
+    username = os.environ.get(
+        "TRADING_BOT_BOOTSTRAP_ADMIN_USERNAME",
+        os.environ.get("PREDICTION_PLATFORM_BOOTSTRAP_ADMIN_USERNAME", ""),
+    ).strip()
+    password = os.environ.get(
+        "TRADING_BOT_BOOTSTRAP_ADMIN_PASSWORD",
+        os.environ.get("PREDICTION_PLATFORM_BOOTSTRAP_ADMIN_PASSWORD", ""),
+    ).strip()
+    email = os.environ.get(
+        "TRADING_BOT_BOOTSTRAP_ADMIN_EMAIL",
+        os.environ.get("PREDICTION_PLATFORM_BOOTSTRAP_ADMIN_EMAIL", "admin@localhost"),
+    ).strip()
 
     cursor.execute("SELECT COUNT(*) FROM users")
     user_count = cursor.fetchone()[0]
@@ -27,8 +83,8 @@ def _bootstrap_admin_if_configured(cursor):
 
     if not username or not password:
         print(
-            "No users exist yet. Set TRADING_BOT_BOOTSTRAP_ADMIN_USERNAME and "
-            "TRADING_BOT_BOOTSTRAP_ADMIN_PASSWORD to create the first admin account."
+            "No users exist yet. Set PREDICTION_PLATFORM_BOOTSTRAP_ADMIN_USERNAME and "
+            "PREDICTION_PLATFORM_BOOTSTRAP_ADMIN_PASSWORD to create the first admin account."
         )
         return
 
@@ -43,29 +99,30 @@ def _bootstrap_admin_if_configured(cursor):
 
 def ensure_db_exists():
     """Create database and tables if they don't exist"""
-    if not DB_PATH.parent.exists():
-        os.makedirs(DB_PATH.parent)
+    _bootstrap_database_file()
     
     conn = sqlite3.connect(str(DB_PATH))
     cursor = conn.cursor()
     
-    # Create trades table if it doesn't exist
+    # Create prediction events table if it doesn't exist
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS trades (
+    CREATE TABLE IF NOT EXISTS prediction_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         symbol TEXT NOT NULL,
-        direction TEXT NOT NULL,
-        entry_price REAL NOT NULL,
-        exit_price REAL,
-        stop_loss REAL,
+        predicted_direction TEXT NOT NULL,
+        baseline_price REAL NOT NULL,
+        resolved_price REAL,
+        reference_threshold REAL,
         targets TEXT,
-        size REAL NOT NULL,
-        entry_time TIMESTAMP NOT NULL,
-        exit_time TIMESTAMP,
-        pnl REAL,
-        status TEXT NOT NULL
+        exposure_size REAL NOT NULL,
+        signal_time TIMESTAMP NOT NULL,
+        resolution_time TIMESTAMP,
+        outcome_delta REAL,
+        outcome_status TEXT NOT NULL
     )
     ''')
+
+    _migrate_legacy_trades_to_prediction_events(cursor)
     
     # Create users table if it doesn't exist
     cursor.execute('''
@@ -93,30 +150,30 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
-def get_trades_from_db(symbol=None, status=None, limit=100):
-    """Fetch trades with optional symbol/status filter."""
+def get_prediction_events_from_db(symbol=None, outcome_status=None, limit=100):
+    """Fetch prediction events with optional symbol/status filter."""
     conn = None
     try:
         conn = get_db_connection()
         
-        query = "SELECT * FROM trades"
+        query = "SELECT * FROM prediction_events"
         params = []
         
-        if symbol or status:
+        if symbol or outcome_status:
             query += " WHERE"
             
             if symbol:
                 query += " symbol = ?"
                 params.append(symbol)
                 
-            if symbol and status:
+            if symbol and outcome_status:
                 query += " AND"
                 
-            if status:
-                query += " status = ?"
-                params.append(status)
+            if outcome_status:
+                query += " outcome_status = ?"
+                params.append(outcome_status)
         
-        query += " ORDER BY entry_time DESC"
+        query += " ORDER BY signal_time DESC"
         
         if limit:
             query += " LIMIT ?"
@@ -126,8 +183,8 @@ def get_trades_from_db(symbol=None, status=None, limit=100):
         
         # Convert timestamp strings to datetime
         if not df.empty:
-            df['entry_time'] = pd.to_datetime(df['entry_time'], format='mixed', errors='coerce')
-            df['exit_time'] = pd.to_datetime(df['exit_time'], format='mixed', errors='coerce')
+            df['signal_time'] = pd.to_datetime(df['signal_time'], format='mixed', errors='coerce')
+            df['resolution_time'] = pd.to_datetime(df['resolution_time'], format='mixed', errors='coerce')
             # Convert targets from JSON string to list
             df['targets'] = df['targets'].apply(
                 lambda x: json.loads(x) if isinstance(x, str) and x else []
@@ -137,61 +194,69 @@ def get_trades_from_db(symbol=None, status=None, limit=100):
         return df
         
     except Exception as e:
-        print(f"Error fetching trades from database: {e}")
+        print(f"Error fetching prediction events from database: {e}")
         import traceback
         traceback.print_exc()
         if conn:
             conn.close()
         # Return an empty DataFrame with expected columns
         return pd.DataFrame(columns=[
-            'id', 'symbol', 'direction', 'entry_price', 'exit_price',
-            'stop_loss', 'targets', 'size', 'pnl', 'entry_time', 'exit_time', 'status'
+            'id', 'symbol', 'predicted_direction', 'baseline_price', 'resolved_price',
+            'reference_threshold', 'targets', 'exposure_size', 'outcome_delta',
+            'signal_time', 'resolution_time', 'outcome_status'
         ])
 
-def add_trade_to_db(trade_data):
-    """Insert a new trade record."""
+
+def get_trades_from_db(symbol=None, status=None, limit=100):
+    """Backward-compatible alias for legacy callers."""
+    return get_prediction_events_from_db(symbol=symbol, outcome_status=status, limit=limit)
+
+def add_prediction_event_to_db(event_data):
+    """Insert a new prediction event record."""
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
         # Print debug info
-        print(f"Adding trade: {trade_data}")
+        print(f"Adding prediction event: {event_data}")
         
         # Format dates properly
-        if isinstance(trade_data.get('entry_time'), datetime.datetime):
-            entry_time = trade_data['entry_time'].strftime("%Y-%m-%d %H:%M:%S")
+        if isinstance(event_data.get('signal_time'), datetime.datetime):
+            signal_time = event_data['signal_time'].strftime("%Y-%m-%d %H:%M:%S")
+        elif isinstance(event_data.get('entry_time'), datetime.datetime):
+            signal_time = event_data['entry_time'].strftime("%Y-%m-%d %H:%M:%S")
         else:
-            entry_time = trade_data.get('entry_time')
+            signal_time = event_data.get('signal_time') or event_data.get('entry_time')
             
         # Convert targets list to a string
-        targets_str = json.dumps(trade_data.get('targets', []))
+        targets_str = json.dumps(event_data.get('targets', []))
         
         # Validate required fields
-        if not trade_data.get('symbol') or not entry_time:
-            print("Error: Missing required fields for trade")
+        if not event_data.get('symbol') or not signal_time:
+            print("Error: Missing required fields for prediction event")
             return False
         
         cursor.execute(
             """
-            INSERT INTO trades (
-                symbol, direction, entry_price, exit_price, 
-                stop_loss, targets, size, pnl, 
-                entry_time, exit_time, status
+            INSERT INTO prediction_events (
+                symbol, predicted_direction, baseline_price, resolved_price, 
+                reference_threshold, targets, exposure_size, outcome_delta, 
+                signal_time, resolution_time, outcome_status
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                trade_data.get('symbol', 'UNKNOWN'),
-                trade_data.get('direction', 'long'),
-                float(trade_data.get('entry_price', 0.0)),
-                None,  # exit_price starts as NULL
-                float(trade_data.get('stop_loss', 0.0)),
+                event_data.get('symbol', 'UNKNOWN'),
+                event_data.get('predicted_direction', event_data.get('direction', 'neutral')),
+                float(event_data.get('baseline_price', event_data.get('entry_price', 0.0))),
+                None,  # resolved_price starts as NULL
+                float(event_data.get('reference_threshold', event_data.get('stop_loss', 0.0))),
                 targets_str,
-                float(trade_data.get('size', 0.0)),
-                0.0,   # pnl starts at 0
-                entry_time,
-                None,  # exit_time starts as NULL
-                trade_data.get('status', 'open')
+                float(event_data.get('exposure_size', event_data.get('size', 0.0))),
+                0.0,   # outcome_delta starts at 0
+                signal_time,
+                None,  # resolution_time starts as NULL
+                event_data.get('outcome_status', event_data.get('status', 'open'))
             )
         )
         
@@ -199,36 +264,56 @@ def add_trade_to_db(trade_data):
         conn.close()
         return True
     except Exception as e:
-        print(f"Error adding trade to database: {e}")
+        print(f"Error adding prediction event to database: {e}")
         import traceback
         traceback.print_exc()
         if conn:
             conn.close()
         return False
 
-def update_trade_in_db(trade_id, update_data):
-    """Update fields on an existing trade."""
+
+def add_trade_to_db(trade_data):
+    """Backward-compatible alias for legacy callers."""
+    return add_prediction_event_to_db(trade_data)
+
+def update_prediction_event_in_db(event_id, update_data):
+    """Update fields on an existing prediction event."""
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Check if trade exists
-        cursor.execute("SELECT id FROM trades WHERE id = ?", (trade_id,))
+        # Check if event exists
+        cursor.execute("SELECT id FROM prediction_events WHERE id = ?", (event_id,))
         if not cursor.fetchone():
-            print(f"Trade with ID {trade_id} not found")
+            print(f"Prediction event with ID {event_id} not found")
             conn.close()
             return False
         
         # Ensure consistent timestamp format
+        if 'resolution_time' in update_data and isinstance(update_data.get('resolution_time'), datetime.datetime):
+            update_data['resolution_time'] = update_data['resolution_time'].strftime("%Y-%m-%d %H:%M:%S")
         if 'exit_time' in update_data and isinstance(update_data.get('exit_time'), datetime.datetime):
-            update_data['exit_time'] = update_data['exit_time'].strftime("%Y-%m-%d %H:%M:%S")
+            update_data['resolution_time'] = update_data['exit_time'].strftime("%Y-%m-%d %H:%M:%S")
+            update_data.pop('exit_time', None)
         
         # Format numeric values
+        if 'resolved_price' in update_data:
+            update_data['resolved_price'] = float(update_data['resolved_price'])
         if 'exit_price' in update_data:
-            update_data['exit_price'] = float(update_data['exit_price'])
+            update_data['resolved_price'] = float(update_data['exit_price'])
+            update_data.pop('exit_price', None)
+        if 'outcome_delta' in update_data:
+            update_data['outcome_delta'] = float(update_data['outcome_delta'])
         if 'pnl' in update_data:
-            update_data['pnl'] = float(update_data['pnl'])
+            update_data['outcome_delta'] = float(update_data['pnl'])
+            update_data.pop('pnl', None)
+        if 'status' in update_data:
+            update_data['outcome_status'] = update_data['status']
+            update_data.pop('status', None)
+        if 'direction' in update_data:
+            update_data['predicted_direction'] = update_data['direction']
+            update_data.pop('direction', None)
         
         set_clauses = []
         params = []
@@ -237,9 +322,9 @@ def update_trade_in_db(trade_id, update_data):
             set_clauses.append(f"{key} = ?")
             params.append(value)
         
-        params.append(trade_id)
+        params.append(event_id)
         
-        query = f"UPDATE trades SET {', '.join(set_clauses)} WHERE id = ?"
+        query = f"UPDATE prediction_events SET {', '.join(set_clauses)} WHERE id = ?"
         cursor.execute(query, params)
         
         conn.commit()
@@ -247,31 +332,41 @@ def update_trade_in_db(trade_id, update_data):
         
         return cursor.rowcount > 0
     except Exception as e:
-        print(f"Error updating trade: {e}")
+        print(f"Error updating prediction event: {e}")
         import traceback
         traceback.print_exc()
         if conn:
             conn.close()
         return False
 
-def delete_trade_from_db(trade_id):
-    """Remove a trade by ID."""
+def update_trade_in_db(trade_id, update_data):
+    """Backward-compatible alias for legacy callers."""
+    return update_prediction_event_in_db(trade_id, update_data)
+
+
+def delete_prediction_event_from_db(event_id):
+    """Remove a prediction event by ID."""
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        cursor.execute("DELETE FROM trades WHERE id = ?", (trade_id,))
+        cursor.execute("DELETE FROM prediction_events WHERE id = ?", (event_id,))
         
         conn.commit()
         conn.close()
         
         return cursor.rowcount > 0
     except Exception as e:
-        print(f"Error deleting trade: {e}")
+        print(f"Error deleting prediction event: {e}")
         if conn:
             conn.close()
         return False
+
+
+def delete_trade_from_db(trade_id):
+    """Backward-compatible alias for legacy callers."""
+    return delete_prediction_event_from_db(trade_id)
 
 def get_user_from_db(username):
     """Look up a user by username."""
@@ -370,37 +465,42 @@ def update_login_timestamp(username):
     
     return cursor.rowcount > 0
 
-def get_trade_stats():
-    """Get overall trading statistics"""
+def get_prediction_stats():
+    """Get overall prediction outcome statistics."""
     conn = get_db_connection()
     
-    # Get total trades
-    total_trades = pd.read_sql("SELECT COUNT(*) as count FROM trades", conn).iloc[0]['count']
+    # Get total prediction events
+    total_events = pd.read_sql("SELECT COUNT(*) as count FROM prediction_events", conn).iloc[0]['count']
     
-    # Get closed trades stats
-    closed_trades_df = pd.read_sql(
-        "SELECT * FROM trades WHERE status = 'closed'",
+    # Get closed outcome stats
+    closed_events_df = pd.read_sql(
+        "SELECT * FROM prediction_events WHERE outcome_status = 'closed'",
         conn
     )
     
     stats = {
-        'total_trades': total_trades,
-        'closed_trades': len(closed_trades_df),
-        'open_trades': total_trades - len(closed_trades_df)
+        'total_events': total_events,
+        'closed_events': len(closed_events_df),
+        'open_events': total_events - len(closed_events_df)
     }
     
-    if not closed_trades_df.empty:
-        win_trades = closed_trades_df[closed_trades_df['pnl'] > 0]
-        loss_trades = closed_trades_df[closed_trades_df['pnl'] <= 0]
+    if not closed_events_df.empty:
+        positive_events = closed_events_df[closed_events_df['outcome_delta'] > 0]
+        negative_events = closed_events_df[closed_events_df['outcome_delta'] <= 0]
         
         stats.update({
-            'total_pnl': closed_trades_df['pnl'].sum(),
-            'win_trades': len(win_trades),
-            'loss_trades': len(loss_trades),
-            'win_rate': len(win_trades) / len(closed_trades_df) * 100 if len(closed_trades_df) > 0 else 0,
-            'avg_win': win_trades['pnl'].mean() if len(win_trades) > 0 else 0,
-            'avg_loss': loss_trades['pnl'].mean() if len(loss_trades) > 0 else 0
+            'net_outcome': closed_events_df['outcome_delta'].sum(),
+            'positive_events': len(positive_events),
+            'negative_events': len(negative_events),
+            'positive_rate': len(positive_events) / len(closed_events_df) * 100 if len(closed_events_df) > 0 else 0,
+            'avg_positive_outcome': positive_events['outcome_delta'].mean() if len(positive_events) > 0 else 0,
+            'avg_negative_outcome': negative_events['outcome_delta'].mean() if len(negative_events) > 0 else 0
         })
     
     conn.close()
     return stats
+
+
+def get_trade_stats():
+    """Backward-compatible alias for legacy callers."""
+    return get_prediction_stats()

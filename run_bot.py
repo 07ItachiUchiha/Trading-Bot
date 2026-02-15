@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Import our components
-from strategy.auto_trading_manager import AutoTradingManager
+from strategy.prediction_runtime_manager import PredictionRuntimeManager
 from utils.finnhub_webhook import start_webhook_server, subscribe_to_event
 from config import (
     API_KEY, API_SECRET, DEFAULT_SYMBOLS, CAPITAL, RISK_PERCENT,
@@ -85,7 +85,7 @@ def main():
     
     # Create runtime manager
     try:
-        trading_manager = AutoTradingManager(
+        runtime_manager = PredictionRuntimeManager(
             symbols=args.symbols,
             timeframe=args.timeframe,
             capital=args.capital,
@@ -100,18 +100,18 @@ def main():
         if webhook_enabled:
             logger.info("Wiring up webhook events")
             try:
-                subscribe_to_event('news', trading_manager.process_news_event)
-                subscribe_to_event('earnings', trading_manager.process_earnings_event)
+                subscribe_to_event('news', runtime_manager.process_news_event)
+                subscribe_to_event('earnings', runtime_manager.process_earnings_event)
             except Exception as e:
                 logger.error(f"Error connecting webhook events: {e}")
                 
         # Run the runtime manager (this will block)
-        trading_manager.run()
+        runtime_manager.run()
         
     except KeyboardInterrupt:
         logger.info("Prediction runtime interrupted by user")
-        if 'trading_manager' in locals():
-            trading_manager.stop()
+        if 'runtime_manager' in locals():
+            runtime_manager.stop()
     except Exception as e:
         logger.exception(f"Error running prediction runtime: {e}")
         return 1

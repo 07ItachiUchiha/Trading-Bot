@@ -13,7 +13,6 @@ streamlit>=1.10.0
 
 # API clients
 alpaca-trade-api>=2.1.0
-python-binance>=1.0.15
 finnhub-python>=2.4.12
 newsapi-python>=0.2.6
 yfinance>=0.1.70
