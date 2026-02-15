@@ -1,63 +1,64 @@
 # Architecture
 
-High-level overview of how things fit together.
+High-level view of the current prediction-first platform.
 
 ## Layout
 
 ```
-dashboard/     - Streamlit UI, charts, trade controls
-strategy/      - Trading logic (auto trader, news strategy, earnings, etc.)
-utils/         - Shared stuff: websockets, sentiment, risk calc, alerts
-security/      - Encrypted config storage
-data/          - Local JSON/SQLite storage
-logs/          - Rotating log files
+prediction/    - Prediction schema + fusion engine
+strategy/      - Orchestration + strategy signal producers
+utils/         - Data, sentiment, risk, LLM, webhook utilities
+dashboard/     - Streamlit UI and prediction visualization
+security/      - Secure config helpers
+tests/         - Prediction + regression tests
 ```
 
 ## Data flow
 
 ```
-Market Data --> WebSocket --> Signal Processing --> Risk Check --> Order Execution --> Dashboard
-                               |
-News/Events --> Sentiment -----+
+Market Data + News/Events --> Signal Extraction --> Prediction Engine --> Dashboard/Alerts
+                                         |
+                                         +--> factor breakdown + rationale + risk flags
 ```
 
-Basically: price data and news come in, get turned into signals, risk manager decides sizing, and orders go out through Alpaca. The dashboard reads from the same data layer for visualization.
+Predictions are generated from technical + sentiment + event factors, then exposed with confidence and explanation.
 
 ## Key patterns
 
-- **Singleton-ish**: WebSocket connections, config manager, logging setup. Not strict singletons but only instantiated once.
-- **Strategy pattern**: Different trading algos (RSI+EMA, Bollinger, news-based) all implement the same interface so they're interchangeable.
-- **Observer-ish**: WebSocket callbacks push data to subscribers. Dashboard refreshes on new data.
+- **Prediction contract**: structured `Prediction` output across runtime paths.
+- **Modular fusion**: independent factor analyzers contribute weighted signals.
+- **Fail-safe behavior**: missing external services fall back to deterministic outputs.
+- **Observer-style updates**: dashboard refreshes from data and prediction updates.
 
 ## Module breakdown
 
-### Strategy layer
+### Core prediction/orchestration
 
-- `auto_trading_manager.py` — main orchestrator, runs the loop
-- `news_strategy.py` — sentiment-driven entries
-- `earnings_report_strategy.py` — trades around earnings events
-- `multiple_strategies.py` — manages switching between strategies
-- `strategy.py` — base technical strategy (RSI, Bollinger, EMA)
+- `prediction/engine.py` — multi-factor prediction fusion
+- `prediction/schema.py` — prediction output dataclass contract
+- `strategy/auto_trading_manager.py` — runtime loop and signal orchestration
 
-### Data / utils layer
+### Data and analytics utilities
 
-- `market_data_manager.py` — fetches and caches OHLCV from Alpaca
-- `websocket_manager.py` — real-time price streaming
-- `sentiment_analyzer.py` — VADER-based news scoring
-- `signal_processor.py` — combines technical + sentiment signals
-- `risk_manager.py` / `risk_management.py` — position sizing, stop losses
+- `utils/market_data_manager.py` — OHLCV fetching/caching
+- `utils/websocket_manager.py` — real-time updates
+- `utils/sentiment_analyzer.py` — NLP sentiment scoring
+- `utils/signal_processor.py` — weighted signal combination helpers
+- `utils/risk_management.py` — sizing/trailing-stop helpers
+- `utils/llm_integration.py` — optional LLM rationale provider
 
 ### Dashboard
 
-- Streamlit app with pages for manual trading, PnL analysis, trade history, wallet
-- Components for charting, position monitoring, correlation checks
+- `dashboard/app.py` — Streamlit entrypoint
+- `dashboard/components/market_data.py` — prediction-based market signal view
+- other components/pages for controls, PnL, history, and monitoring
 
 ## Tech stack
 
 - Python 3.8+
-- Pandas / NumPy for number crunching
-- Streamlit for the web UI
-- Alpaca API for brokerage
-- Binance WebSocket as backup data source
-- NLTK/VADER for sentiment
+- Pandas / NumPy
+- Streamlit
+- Alpaca API
+- NLTK/VADER + TextBlob for sentiment features
+- Optional LLM provider: Gemini or OpenRouter
 - SQLite for local persistence

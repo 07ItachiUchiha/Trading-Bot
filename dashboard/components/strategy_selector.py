@@ -32,30 +32,13 @@ def display_strategy_selector(data, key_prefix=""):
     if f"{key_prefix}selected_strategy" not in st.session_state:
         st.session_state[f"{key_prefix}selected_strategy"] = "Combined Strategy"
         
-    if f"{key_prefix}live_execution" not in st.session_state:
-        st.session_state[f"{key_prefix}live_execution"] = False
-    
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        # Strategy selector dropdown
-        selected_strategy = st.selectbox(
-            "Select Trading Strategy",
-            options=strategy_options,
-            index=strategy_options.index(st.session_state.get(f"{key_prefix}selected_strategy", "Combined Strategy")),
-            key=f"{key_prefix}strategy_selector"
-        )
-        st.session_state[f"{key_prefix}selected_strategy"] = selected_strategy
-    
-    with col2:
-        # Live execution toggle
-        live_execution = st.toggle(
-            "Live Execution",
-            value=st.session_state.get(f"{key_prefix}live_execution", False),
-            key=f"{key_prefix}live_execution_toggle",
-            help="Enable or disable live trading with this strategy"
-        )
-        st.session_state[f"{key_prefix}live_execution"] = live_execution
+    selected_strategy = st.selectbox(
+        "Select Prediction Strategy",
+        options=strategy_options,
+        index=strategy_options.index(st.session_state.get(f"{key_prefix}selected_strategy", "Combined Strategy")),
+        key=f"{key_prefix}strategy_selector"
+    )
+    st.session_state[f"{key_prefix}selected_strategy"] = selected_strategy
     
     # Calculate signals using the selected strategy
     signals = apply_strategy(data, selected_strategy)
@@ -83,7 +66,7 @@ def display_strategy_selector(data, key_prefix=""):
             """, unsafe_allow_html=True)
     
     # Return the selected strategy name and signals
-    return selected_strategy, signals, live_execution
+    return selected_strategy, signals, False
 
 def get_strategy_explanation(strategy_name):
     """Return a markdown blurb explaining how the strategy works."""

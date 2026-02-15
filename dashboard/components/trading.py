@@ -4,7 +4,6 @@ import sys
 from pathlib import Path
 import streamlit as st
 import traceback
-import threading
 import logging
 import plotly.graph_objects as go
 import alpaca_trade_api as tradeapi
@@ -32,17 +31,11 @@ except ImportError:
 # Import trading bot modules
 try:
     from strategy.strategy import detect_consolidation, detect_breakout
-    from strategy.auto_trading_manager import AutoTradingManager
     from utils.sentiment_analyzer import SentimentAnalyzer
     from utils.signal_processor import SignalProcessor
     from utils.finnhub_webhook import subscribe_to_event
 except ImportError:
     print("Warning: Unable to import some strategy or utility modules")
-
-# Auto trading state variables
-auto_trader_thread = None
-auto_trader_running = False
-auto_trader_instance = None
 
 # Initialize global sentiment analyzer and signal processor
 sentiment_analyzer = None
@@ -604,122 +597,6 @@ def plot_candlestick_chart(df, signals=None):
     )
     
     return fig
-
-def calculate_pnl(entry_price, exit_price, direction, size):
-    """Calculate profit/loss for a trade with validation"""
-    try:
-        # Validate inputs
-        entry_price = float(entry_price)
-        exit_price = float(exit_price)
-        size = float(size)
-        
-        if entry_price <= 0 or exit_price <= 0 or size <= 0:
-            print(f"Warning: Invalid values for PnL calculation: entry={entry_price}, exit={exit_price}, size={size}")
-            return 0.0
-            
-        if direction == 'long':
-            pnl = (exit_price - entry_price) * size
-        else:  # short
-            pnl = (entry_price - exit_price) * size
-        
-        return pnl
-    except Exception as e:
-        print(f"Error calculating PnL: {e}")
-        return 0.0
-
-def start_auto_trader(symbols, timeframe, capital, risk_percent, profit_target, daily_profit_target, 
-                     use_news=True, news_weight=0.5, use_earnings=True, earnings_weight=0.6):
-    """Start the auto trader in a background thread"""
-    global auto_trader_thread, auto_trader_running, auto_trader_instance
-    
-    # Convert Streamlit timeframe format to Alpaca format for AutoTradingManager
-    timeframe_dict = {
-        '1m': '1Min',
-        '3m': '3Min',
-        '5m': '5Min',
-        '15m': '15Min',
-        '30m': '30Min',
-        '1h': '1Hour',
-        '2h': '2Hour',
-        '4h': '4Hour',
-        '6h': '6Hour',
-        '12h': '12Hour',
-        '1d': '1Day'
-    }
-    alpaca_timeframe = timeframe_dict.get(timeframe, '1Hour')
-    
-    if auto_trader_running:
-        return False, "Auto trader is already running"
-    
-    try:
-        # Create an instance of the auto trading manager without sending API keys
-        # The AutoTradingManager will use the keys from config.py
-        auto_trader_instance = AutoTradingManager(
-            symbols=symbols,
-            timeframe=alpaca_timeframe,
-            capital=capital,
-            risk_percent=risk_percent,
-            profit_target_percent=profit_target,
-            daily_profit_target=daily_profit_target,
-            use_news=use_news,
-            news_weight=news_weight,
-            use_earnings=use_earnings,
-            earnings_weight=earnings_weight
-        )
-        
-        # Define the thread function
-        def run_trader():
-            try:
-                auto_trader_instance.run()
-            except Exception as e:
-                print(f"Error in auto trader thread: {e}")
-                traceback.print_exc()
-        
-        # Create and start the thread
-        auto_trader_thread = threading.Thread(target=run_trader, daemon=True)
-        auto_trader_thread.start()
-        
-        auto_trader_running = True
-        return True, "Auto trader started successfully"
-    except Exception as e:
-        error_msg = f"Failed to start auto trader: {str(e)}"
-        traceback.print_exc()
-        return False, error_msg
-
-def stop_auto_trader():
-    """Stop the running auto trader"""
-    global auto_trader_running, auto_trader_instance
-    
-    if not auto_trader_running:
-        return False, "Auto trader is not running"
-    
-    try:
-        # Tell the auto trader to stop
-        if auto_trader_instance:
-            auto_trader_instance.stop()
-        
-        auto_trader_running = False
-        return True, "Auto trader stopped successfully"
-    except Exception as e:
-        error_msg = f"Failed to stop auto trader: {str(e)}"
-        return False, error_msg
-
-def get_auto_trader_status():
-    """Get the current status of the auto trader"""
-    global auto_trader_running, auto_trader_instance
-    
-    status = {
-        "running": auto_trader_running,
-        "trades": []
-    }
-    
-    if auto_trader_running and auto_trader_instance:
-        # Get information from auto trader instance
-        status["active_trades"] = auto_trader_instance.get_active_trades() if hasattr(auto_trader_instance, 'get_active_trades') else []
-        status["last_signal"] = auto_trader_instance.get_last_signal() if hasattr(auto_trader_instance, 'get_last_signal') else None
-        status["pnl"] = auto_trader_instance.get_current_pnl() if hasattr(auto_trader_instance, 'get_current_pnl') else 0
-    
-    return status
 
 # Force a rerun periodically to refresh the UI
 if not hasattr(st.session_state, 'last_rerun') or \

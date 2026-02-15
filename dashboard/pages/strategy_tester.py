@@ -50,7 +50,7 @@ def main():
             data = fetch_historical_data(symbol, interval, limit, provider)
         
         # Display strategy selector
-        strategy_name, signals, live_execution = display_strategy_selector(data)
+        strategy_name, signals, _ = display_strategy_selector(data)
         
         # Show candlestick chart with strategy signals
         st.subheader(f"{symbol} {interval} Chart with {strategy_name.replace('_', ' ').title()} Signals")
@@ -60,37 +60,7 @@ def main():
         # Display strategy performance
         display_strategy_performance(strategy_name, data, signals)
         
-        # Display execution status
-        if live_execution:
-            st.success("Live execution is enabled for this strategy")
-            
-            with st.expander("Live Execution Settings"):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    risk_percent = st.slider("Risk Per Trade (%)", 0.1, 5.0, 1.0, 0.1)
-                    position_size = st.slider("Max Position Size (%)", 1.0, 50.0, 10.0, 1.0)
-                
-                with col2:
-                    take_profit = st.slider("Take Profit (%)", 1.0, 20.0, 3.0, 0.5)
-                    stop_loss = st.slider("Stop Loss (%)", 1.0, 10.0, 2.0, 0.5)
-                
-                confirm_execution = st.button("Confirm Live Execution Settings")
-                
-                if confirm_execution:
-                    st.session_state["execution_confirmed"] = True
-                    st.session_state["execution_settings"] = {
-                        "strategy": strategy_name,
-                        "symbol": symbol,
-                        "interval": interval,
-                        "risk_percent": risk_percent,
-                        "position_size": position_size,
-                        "take_profit": take_profit,
-                        "stop_loss": stop_loss
-                    }
-                    st.success("Execution settings confirmed and saved!")
-        else:
-            st.info("Live execution is disabled for this strategy")
+        st.info("Monitoring mode only: this tester reports signals and simulated performance.")
 
     except Exception as e:
         st.error(f"Error: {e}")

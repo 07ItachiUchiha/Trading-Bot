@@ -9,8 +9,37 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-# Import utility functions
-from utils.signal_combiner import get_combined_signals
+from prediction.engine import PredictionEngine
+
+
+def _build_demo_ohlcv(symbol, periods=120):
+    """Build deterministic demo OHLCV data for prediction preview panels."""
+    dates = pd.date_range(end=datetime.now(), periods=periods, freq="1h")
+
+    if "BTC" in symbol:
+        base_price = 65000
+    elif "ETH" in symbol:
+        base_price = 3500
+    elif "SOL" in symbol:
+        base_price = 150
+    else:
+        base_price = 200
+
+    np.random.seed(42)
+    price_changes = np.random.normal(0, base_price * 0.01, periods)
+    prices = np.maximum(base_price * 0.4, base_price + np.cumsum(price_changes))
+
+    df = pd.DataFrame(
+        {
+            "timestamp": dates,
+            "open": prices * (1 - 0.004 * np.random.random(periods)),
+            "high": prices * (1 + 0.008 * np.random.random(periods)),
+            "low": prices * (1 - 0.008 * np.random.random(periods)),
+            "close": prices,
+            "volume": np.random.randint(1000, 10000, periods).astype(float),
+        }
+    )
+    return df.set_index("timestamp")
 
 def display_market_data(symbol='BTC/USD', interval='1h', show_combined_signals=False):
     """Display market data with technical indicators and signals"""
@@ -186,12 +215,32 @@ def display_technical_signals(symbol):
         st.markdown(f"<h3 style='color:red'>{signal} with {confidence}% confidence</h3>", unsafe_allow_html=True)
 
 def display_combined_signals(symbol):
-    """Display combined technical and sentiment signals"""
+    """Display combined signals using the prediction engine output."""
     st.subheader("Combined Signal Analysis")
-    
-    # Get combined signals
-    combined_data = get_combined_signals(symbol)
-    signal_data = combined_data[symbol]
+
+    engine = PredictionEngine()
+    prediction = engine.predict(symbol, _build_demo_ohlcv(symbol))
+    signal_data = {
+        "signal": prediction.action.lower(),
+        "confidence": prediction.confidence,
+        "technical_signal": (
+            "buy"
+            if prediction.factor_breakdown.get("technical", 0) > 0.05
+            else "sell"
+            if prediction.factor_breakdown.get("technical", 0) < -0.05
+            else "hold"
+        ),
+        "sentiment_signal": (
+            "buy"
+            if prediction.factor_breakdown.get("sentiment", 0) > 0.05
+            else "sell"
+            if prediction.factor_breakdown.get("sentiment", 0) < -0.05
+            else "hold"
+        ),
+        "rationale": prediction.rationale,
+        "risk_flags": prediction.risk_flags,
+        "latency_ms": prediction.latency_ms,
+    }
     
     # Create columns for technical, sentiment, and combined signals
     col1, col2, col3 = st.columns(3)
@@ -238,28 +287,9 @@ def display_combined_signals(symbol):
         
     # Display signal explanation
     st.subheader("Signal Explanation")
-    
-    if comb_signal == "BUY" or comb_signal == "STRONG BUY":
-        st.write("""
-        This **BUY** signal is based on positive technical indicators and favorable sentiment analysis.
-        
-        - Technical indicators show upward momentum
-        - News sentiment is positive
-        - Combined analysis suggests good entry point
-        """)
-    elif comb_signal == "SELL" or comb_signal == "STRONG SELL":
-        st.write("""
-        This **SELL** signal is based on bearish technical indicators and negative sentiment analysis.
-        
-        - Technical indicators show downward momentum
-        - News sentiment is negative
-        - Combined analysis suggests reducing exposure
-        """)
-    else:
-        st.write("""
-        This **HOLD** signal indicates mixed or neutral indicators.
-        
-        - Technical indicators show sideways movement
-        - News sentiment is neutral or conflicting
-        - Wait for a stronger signal before taking action
-        """)
+
+    st.write(signal_data["rationale"])
+
+    if signal_data["risk_flags"]:
+        st.caption(f"Risk flags: {', '.join(signal_data['risk_flags'])}")
+    st.caption(f"Prediction latency: {signal_data['latency_ms']:.1f} ms")

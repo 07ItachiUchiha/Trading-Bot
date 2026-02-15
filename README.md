@@ -195,8 +195,9 @@ DEFAULT_SYMBOLS = ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XAU/USD']
 
 ## Documentation
 
-- [Architecture & Audit](docs/AUDIT_AND_ARCHITECTURE.md) - System design, file classification, 20 bugs found
-- [Cleanup Plan](docs/CLEANUP_PLAN.md) - Details on removed legacy code (7 files deleted, 4 quarantined)
+- [Architecture & Audit](docs/AUDIT_AND_ARCHITECTURE.md) - Current prediction-platform architecture and module classification
+- [Cleanup Plan](docs/CLEANUP_PLAN.md) - Finalized cleanup actions and keep-list
+- [Cleanup Report](docs/CLEANUP_REPORT.md) - Current removed vs kept inventory and verification results
 - [API Reference](docs/API_REFERENCE.md) - Module and function documentation
 - [Deployment Guide](docs/DEPLOYMENT.md) - Production deployment instructions
 - [Test Suite](tests/README.md) - Testing framework and coverage
@@ -207,7 +208,7 @@ The project has been repositioned from a basic crypto trading bot into a **fast,
 
 ✅ **New prediction engine** - Structured Prediction schema with explainability (21 tests pass)
 ✅ **Upgraded LLM** - Gemini (primary) + OpenRouter (fallback) with intelligent fallback  
-✅ **Cleaned codebase** - Removed 7 legacy/dead files, consolidated 3 duplicate modules  
+✅ **Cleaned codebase** - Removed legacy/dead paths and finalized duplicate-module cleanup  
 ✅ **Fixed 10 P0 bugs** - Syntax errors, undefined variables, broken imports  
 ✅ **Wired auto_trading_manager** - Now produces structured Predictions alongside legacy signals
 

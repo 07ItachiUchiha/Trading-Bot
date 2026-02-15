@@ -2,14 +2,12 @@ import streamlit as st
 
 # This MUST be the first Streamlit command in the app
 st.set_page_config(
-    page_title="Trading Bot Dashboard",
+    page_title="Market Prediction Dashboard",
     page_icon="",
     layout="wide"
 )
 
 # All other imports and code should come after this line
-import pandas as pd
-import numpy as np
 import os
 import sys
 import logging
@@ -22,17 +20,19 @@ sys.path.append(str(Path(__file__).parent.parent))
 # Import from components
 from dashboard.components.auth import authenticate
 from dashboard.components.database import ensure_db_exists
-from dashboard.components.dashboard_ui import render_live_trading_tab, render_trade_history_tab, render_performance_tab, render_settings_tab
+from dashboard.components.dashboard_ui import (
+    render_prediction_log_tab,
+    render_performance_tab,
+    render_settings_tab,
+)
 
 # Import utils
 from utils.websocket_manager import WebSocketManager
 
 # Import from config
-from config import API_KEY, API_SECRET, DEFAULT_SYMBOLS
+from config import API_KEY, API_SECRET
 
 # Import our new components
-from dashboard.components.pnl_visualization import display_pnl_chart
-from dashboard.components.trade_filter import display_trade_filter
 from dashboard.components.trading import fetch_historical_data, plot_candlestick_chart, calculate_signals
 from dashboard.components.strategy_selector import display_strategy_selector
 
@@ -79,7 +79,7 @@ def handle_real_time_update(data):
                     
                     # Update signals after new data
                     if st.session_state.get('update_signals', True):
-                        from components.trading import calculate_signals
+                        from dashboard.components.trading import calculate_signals
                         signals, updated_data = calculate_signals(st.session_state.data)
                         st.session_state.signals = signals
                         st.session_state.data = updated_data
@@ -103,7 +103,7 @@ def main():
     authenticate()
     
     # Main page layout
-    st.title("Trading Bot Dashboard")
+    st.title("Market Prediction Dashboard")
     
     # Initialize session state variables
     if "update_signals" not in st.session_state:
@@ -202,35 +202,30 @@ def main():
     st.sidebar.title("Navigation")
     page = st.sidebar.radio(
         "Select Page",
-        ["Trading Dashboard", "Manual Trading", "News Analysis", "Strategy Tester", "PnL Analysis", "Trade History", "Wallet"]
+        ["Prediction Dashboard", "News Analysis", "Strategy Explorer", "Prediction Analytics", "Prediction Log"]
     )
     
     # Display selected page
-    if page == "Trading Dashboard":
+    if page == "Prediction Dashboard":
         display_trading_dashboard()
-    elif page == "Manual Trading":
-        from dashboard.pages.manual_trading import main as display_manual_trading
-        display_manual_trading()
     elif page == "News Analysis":
         from dashboard.pages.news_analysis import display_news_analysis
         display_news_analysis(symbol)
-    elif page == "Strategy Tester":
+    elif page == "Strategy Explorer":
         display_strategy_tester()
-    elif page == "PnL Analysis":
+    elif page == "Prediction Analytics":
         display_pnl_analysis()
-    elif page == "Trade History":
+    elif page == "Prediction Log":
         display_trade_history()
-    elif page == "Wallet":
-        display_wallet_page()
 
 def display_strategy_tester():
-    """Display the strategy tester page"""
+    """Display the strategy explorer page."""
     # Import necessary components directly
     from dashboard.components.trading import fetch_historical_data, plot_candlestick_chart
     from dashboard.components.strategy_selector import display_strategy_selector, display_strategy_performance
     
-    st.title("Strategy Tester")
-    st.write("Test and compare different trading strategies on historical data.")
+    st.title("Strategy Explorer")
+    st.write("Test and compare prediction strategies on historical data.")
 
     # Sidebar options
     with st.sidebar:
@@ -254,7 +249,7 @@ def display_strategy_tester():
         
         provider = st.selectbox(
             "Data Provider",
-            options=["alpaca", "binance"],
+            options=["alpaca"],
             index=0
         )
         
@@ -268,7 +263,7 @@ def display_strategy_tester():
             data = fetch_cached_historical_data(symbol, interval, limit, provider)
         
         # Display strategy selector
-        strategy_name, signals, live_execution = display_strategy_selector(data)
+        strategy_name, signals, _ = display_strategy_selector(data)
         
         # Show candlestick chart with strategy signals
         st.subheader(f"{symbol} {interval} Chart with {strategy_name.replace('_', ' ').title()} Signals")
@@ -278,47 +273,17 @@ def display_strategy_tester():
         # Display strategy performance
         display_strategy_performance(strategy_name, data, signals)
         
-        # Display execution status
-        if live_execution:
-            st.success(" Live execution is enabled for this strategy")
-            
-            with st.expander("Live Execution Settings"):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    risk_percent = st.slider("Risk Per Trade (%)", 0.1, 5.0, 1.0, 0.1)
-                    position_size = st.slider("Max Position Size (%)", 1.0, 50.0, 10.0, 1.0)
-                
-                with col2:
-                    take_profit = st.slider("Take Profit (%)", 1.0, 20.0, 3.0, 0.5)
-                    stop_loss = st.slider("Stop Loss (%)", 1.0, 10.0, 2.0, 0.5)
-                
-                confirm_execution = st.button("Confirm Live Execution Settings")
-                
-                if confirm_execution:
-                    st.session_state["execution_confirmed"] = True
-                    st.session_state["execution_settings"] = {
-                        "strategy": strategy_name,
-                        "symbol": symbol,
-                        "interval": interval,
-                        "risk_percent": risk_percent,
-                        "position_size": position_size,
-                        "take_profit": take_profit,
-                        "stop_loss": stop_loss
-                    }
-                    st.success("Execution settings confirmed and saved!")
-        else:
-            st.info(" Live execution is disabled for this strategy")
+        st.info("Monitoring mode only: this tester reports signals and simulated performance.")
 
     except Exception as e:
         st.error(f"Error: {e}")
         st.info("Please check your input parameters and try again.")
 
 def display_trading_dashboard():
-    """Display the main trading dashboard"""
-    st.title("Trading Dashboard")
+    """Display the main prediction dashboard."""
+    st.title("Prediction Dashboard")
     
-    # Add strategy selection in the trading dashboard
+    # Add strategy selection in the prediction dashboard
     col1, col2 = st.columns([2, 1])
     
     with col1:
@@ -329,21 +294,19 @@ def display_trading_dashboard():
         data = fetch_historical_data(symbol, interval, 100)
         
         # Display strategy selector in a smaller format
-        strategy_name, signals, live_execution = display_strategy_selector(data, key_prefix="dashboard_")
+        strategy_name, signals, _ = display_strategy_selector(data, key_prefix="dashboard_")
         
-        # Show status of selected strategy
-        if live_execution:
-            st.success(f" {strategy_name.replace('_', ' ').title()} strategy is active for manual trading")
-        else:
-            st.warning(f" {strategy_name.replace('_', ' ').title()} strategy is in monitoring mode only")
+        st.info(f"{strategy_name.replace('_', ' ').title()} is running in monitoring mode.")
     
     with col2:
-        # Display quick account summary or other relevant info
-        from dashboard.components.wallet import display_quick_wallet
-        display_quick_wallet()
+        st.subheader("Model Snapshot")
+        combined_signal = signals.get('combined_signal', {})
+        st.metric("Signal", str(combined_signal.get('signal', 'neutral')).upper())
+        st.metric("Confidence", f"{float(combined_signal.get('confidence', 0.0)):.2f}")
+        st.caption(combined_signal.get('reasoning', 'No model rationale available.'))
     
     # Continue with other tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["Market Overview", "News", "Trade History", "Settings"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Market Overview", "News", "Prediction Log", "Settings"])
     
     with tab1:
         # Display market data and strategy information
@@ -370,14 +333,14 @@ def display_trading_dashboard():
                 st.metric("Volume", "N/A")
                 
         with col3:
-            # Display last trade if available
-            from dashboard.components.trade_controls import get_order_updates
-            latest_orders = get_order_updates()
-            if latest_orders:
-                last_order = list(latest_orders.values())[-1]
-                st.metric("Last Trade", f"{last_order['action'].upper()} at ${last_order['price']:.2f}")
+            # Prediction-only mode: show current signal rather than order activity
+            combined_signal = signals.get('combined_signal', {})
+            signal_name = str(combined_signal.get('signal', 'neutral')).upper()
+            signal_conf = float(combined_signal.get('confidence', 0.0))
+            if signal_name and signal_name != "NEUTRAL":
+                st.metric("Current Signal", signal_name, f"{signal_conf:.2f} confidence")
             else:
-                st.metric("Last Trade", "No recent trades")
+                st.metric("Current Signal", "NEUTRAL")
     
     with tab2:
         # Display news sentiment analysis
@@ -385,38 +348,26 @@ def display_trading_dashboard():
         display_news_analysis(symbol)
     
     with tab3:
-        render_trade_history_tab()
+        render_prediction_log_tab()
     
     with tab4:
         render_settings_tab()
 
 def display_pnl_analysis():
-    """Display PnL analysis page"""
-    st.title("PnL Analysis")
-    
-    # Display PnL chart
-    display_pnl_chart()
+    """Display prediction analytics page."""
+    st.title("Prediction Analytics")
+    render_performance_tab()
 
 def display_trade_history():
-    """Display trade history page"""
-    st.title("Trade History")
-    
-    # Display trade filtering system
-    display_trade_filter()
+    """Display prediction outcome log page."""
+    st.title("Prediction Log")
+    render_prediction_log_tab()
 
 def display_settings():
     """Display settings page"""
     st.title("Settings")
     
     # ... existing code for settings ...
-
-def display_wallet_page():
-    """Display wallet page"""
-    st.title("Wallet & Account")
-    
-    # Import and display wallet component
-    from dashboard.components.wallet import display_wallet
-    display_wallet()
 
 if __name__ == "__main__":
     main()

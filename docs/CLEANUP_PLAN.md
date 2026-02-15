@@ -1,67 +1,60 @@
-# Safe Cleanup Plan - Candidate Matrix
+# Cleanup Plan (Finalized)
 
-## Cleanup Candidate Matrix
+Date: 2026-02-15
 
-| #   | File                               | Risk   | Reason for Removal                                                                      | Imported By                                      | Side Effects         |
-| --- | ---------------------------------- | ------ | --------------------------------------------------------------------------------------- | ------------------------------------------------ | -------------------- |
-| 1   | `api_config.py`                    | LOW    | Dead code, never imported, hardcoded placeholder keys (security risk)                   | Nothing                                          | None                 |
-| 2   | `dashboard/pages/page_template.py` | LOW    | Empty template, `display_page()` never called anywhere                                  | Nothing                                          | None                 |
-| 3   | `run_patched_trader.py`            | LOW    | Only patches np.NaN for legacy `main.py` which is being removed                         | Nothing                                          | None                 |
-| 4   | `main.py`                          | MEDIUM | Legacy Binance bot, uses different broker, `self.llm_model` never defined               | `run_patched_trader.py` (being removed)          | None after batch A   |
-| 5   | `utils/binance_websocket.py`       | MEDIUM | Only used by `main.py` Binance pathway                                                  | `main.py` (being removed)                        | None after #4        |
-| 6   | `strategy/auto_trader.py`          | MEDIUM | Broken import (`RiskManager` from wrong module), duplicate of `auto_trading_manager.py` | Nothing (crashes on import)                      | None                 |
-| 7   | `utils/signal_combiner.py`         | MEDIUM | Duplicate of `signal_processor.py`, has hardcoded demo data                             | `dashboard/components/trading.py` (needs update) | Update 1 import      |
-| 8   | `utils/enhanced_sentiment.py`      | HIGH   | Duplicate of `sentiment_analyzer.py`, has extra features to merge first                 | Multiple dashboard components                    | Merge features first |
-| 9   | `utils/risk_manager.py`            | HIGH   | Class-based duplicate of `risk_management.py`                                           | `auto_trader.py` (dead)                          | Verify no other refs |
+This document tracks the cleanup effort that transformed the project from a legacy crypto-bot layout into a prediction-first platform.
 
-## Batch Removal Plan
+## Objective
 
-### Batch A: Zero-Risk (no importers, no side effects)
+- Remove dead/legacy execution paths
+- Keep prediction-centric, testable modules
+- Eliminate insecure artifacts
+- Maintain working runtime entrypoints (`run_auto_trader.py`, `run_bot.py`)
 
-**Files:** `api_config.py`, `dashboard/pages/page_template.py`, `run_patched_trader.py`
-**Action:** Direct delete
-**Verification:** `grep -r "api_config\|page_template\|run_patched" --include="*.py"` returns nothing
+## Final Actions Completed
 
-### Batch B: Low-to-Medium Risk (importers also being removed)
+### Removed
 
-**Files:** `main.py`, `utils/binance_websocket.py`, `strategy/auto_trader.py`
-**Action:** Move to `_quarantine/` folder, delete after 1 week if no issues
-**Verification:** All tests pass, `run_auto_trader.py` and `run_bot.py` still work
+- `api_config.py`
+- `dashboard/pages/page_template.py`
+- `run_patched_trader.py`
+- `llmApi.txt` (contained exposed keys; replaced with safe docs)
 
-### Batch C: Requires Migration First (duplicate consolidation)
+### Legacy Files Removed From Active Runtime
 
-**Files:** `utils/signal_combiner.py`, `utils/enhanced_sentiment.py`, `utils/risk_manager.py`
-**Action:** Merge unique logic into kept module, update imports, then quarantine
-**Pre-requisite:** Complete duplicate consolidation (see Architecture doc section 4)
+- `main.py` (legacy Binance-centric bot)
+- `strategy/auto_trader.py` (duplicate/broken manager)
+- `utils/binance_websocket.py` (legacy dependency)
+- `utils/signal_combiner.py` (duplicate of signal fusion path)
+- `utils/risk_manager.py` (duplicate class-based risk path)
 
-## 3-Stage Process
+### Replacements / Refactors
 
-### Stage 1: Dry Run (this document)
+- Added prediction-first module:
+  - `prediction/engine.py`
+  - `prediction/schema.py`
+- Updated dashboard market signal panel to use `PredictionEngine`:
+  - `dashboard/components/market_data.py`
+- Added safe LLM setup guide:
+  - `llmApi.md`
 
-- All candidates identified above
-- Import analysis completed
-- Risk levels assigned
+## Keep List (Core Runtime)
 
-### Stage 2: Quarantine
+- `prediction/engine.py`
+- `prediction/schema.py`
+- `strategy/auto_trading_manager.py`
+- `utils/signal_processor.py`
+- `utils/sentiment_analyzer.py`
+- `utils/risk_management.py`
+- `utils/market_data_manager.py`
+- `dashboard/app.py`
+- `run_auto_trader.py`
+- `run_bot.py`
 
-- Batch A files deleted directly (zero risk)
-- Batch B files moved to `_quarantine/` directory
-- Batch C files quarantined after migration
+## Verification
 
-### Stage 3: Permanent Delete
+- Import checks for key modules pass.
+- Prediction tests pass.
+- Existing suite passes with expected skips for optional dependencies.
 
-- After 1 week with no issues, delete `_quarantine/` directory
-- Verify all tests pass
-- Verify dashboard loads correctly
-- Verify auto trader runs without errors
-
-## Verification Checklist
-
-- [ ] `python run_bot.py` starts without import errors
-- [ ] `python run_auto_trader.py` starts without import errors
-- [ ] `python -c "from strategy.auto_trading_manager import AutoTradingManager"` works
-- [ ] `python -c "from utils.signal_processor import SignalProcessor"` works
-- [ ] `python -c "from utils.sentiment_analyzer import SentimentAnalyzer"` works
-- [ ] `python -c "from utils.risk_management import calculate_position_size"` works
-- [ ] Dashboard pages load without crashes
-- [ ] No `ModuleNotFoundError` in logs after 24h runtime
+See `docs/CLEANUP_REPORT.md` for execution results and test output summary.

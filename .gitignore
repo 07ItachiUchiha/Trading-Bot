@@ -83,3 +83,4 @@ coverage.xml
 .coverage
 .coverage.*
 .cache
+llmApi.md

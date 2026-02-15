@@ -1,348 +1,94 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import datetime
 import sys
 from pathlib import Path
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-# Import necessary modules
-from utils.telegram_alert import send_alert
-from utils.discord_webhook import send_discord_alert
-from utils.slack_webhook import send_slack_alert
 from utils.export import export_to_excel, export_to_google_sheets
 from config import CAPITAL, RISK_PERCENT, MAX_CAPITAL_PER_TRADE, DEFAULT_SYMBOLS, PROFIT_TARGET_PERCENT, DAILY_PROFIT_TARGET_PERCENT
 
 # Import local modules
 from .trading import (
-    fetch_historical_data, calculate_signals, plot_candlestick_chart, 
-    calculate_pnl, start_auto_trader, stop_auto_trader, get_auto_trader_status
+    calculate_signals, plot_candlestick_chart
 )
-from .database import get_trades_from_db, add_trade_to_db, update_trade_in_db
+from .database import get_trades_from_db
 
 def render_live_trading_tab(data, signals=None):
-    """Render the Live Trading tab content with strategy signals"""
-    st.subheader("Live Trading")
-    
-    # Safety check for data
+    """Render a prediction-only live tab with no execution controls."""
+    st.subheader("Live Prediction")
+
     if data is None or len(data) < 2:
-        st.error("Insufficient data to display trading interface")
+        st.error("Insufficient data to display prediction interface")
         return
-    
+
+    if signals is None:
+        signals, data_with_indicators = calculate_signals(data)
+        chart_data = data_with_indicators
+    else:
+        chart_data = data
+
+    last_price = data.iloc[-1]["close"]
+    prev_price = data.iloc[-2]["close"]
+    price_change_pct = ((last_price - prev_price) / prev_price) * 100 if prev_price else 0.0
+
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
         st.subheader("Market Status")
-        last_price = data.iloc[-1]['close']
-        price_change = last_price - data.iloc[-2]['close']
-        price_change_pct = price_change / data.iloc[-2]['close'] * 100
-        
         st.metric(
             label=f"{st.session_state.symbol} Price",
             value=f"${last_price:.2f}",
-            delta=f"{price_change_pct:.2f}%"
+            delta=f"{price_change_pct:.2f}%",
         )
-    
+
+    combined_signal = signals.get(
+        "combined_signal",
+        {"signal": "neutral", "confidence": 0.0, "reasoning": "No signal data"},
+    )
+    signal_name = str(combined_signal.get("signal", "neutral")).upper()
+    signal_confidence = float(combined_signal.get("confidence", 0.0))
+    signal_reasoning = combined_signal.get("reasoning", "No reasoning provided")
+
     with col2:
-        st.subheader("Strategy Status")
-        # If signals are not provided, calculate them
-        if signals is None:
-            signals, _ = calculate_signals(data)
-        
-        if 'buy_signals' in signals and signals['buy_signals'].iloc[-5:].any():
-            status = "BUY"
-            color = "green"
-        elif 'sell_signals' in signals and signals['sell_signals'].iloc[-5:].any():
-            status = "SELL"
-            color = "red"
-        else:
-            status = "NEUTRAL"
-            color = "gray"
-        
-        st.markdown(f"<h3 style='color: {color};'>{status}</h3>", unsafe_allow_html=True)
-    
+        st.subheader("Signal")
+        signal_color = {"BUY": "green", "SELL": "red", "NEUTRAL": "gray"}.get(signal_name, "gray")
+        st.markdown(f"<h3 style='color: {signal_color};'>{signal_name}</h3>", unsafe_allow_html=True)
+
     with col3:
-        st.subheader("Auto Trading")
-        auto_status = get_auto_trader_status()
-        
-        if auto_status["running"]:
-            st.success("Auto trader is running")
-            if st.button("Stop Auto Trader"):
-                success, msg = stop_auto_trader()
-                if success:
-                    st.success(msg)
-                else:
-                    st.error(msg)
+        st.subheader("Confidence")
+        st.metric("Model Confidence", f"{signal_confidence:.2f}")
+
+    st.subheader("Signal Analysis")
+    info_col1, info_col2 = st.columns([1, 2])
+    with info_col1:
+        st.write("**Signal Reasoning**")
+        st.caption(signal_reasoning)
+    with info_col2:
+        sentiment = combined_signal.get("sentiment_signal", {})
+        if sentiment:
+            st.write("**Sentiment Snapshot**")
+            st.caption(
+                f"Score: {float(sentiment.get('score', 0.0)):.2f} | "
+                f"Articles: {sentiment.get('news_count', 0)} | "
+                f"Sources: {sentiment.get('source_count', 0)}"
+            )
         else:
-            st.warning("Auto trader is stopped")
-            if st.button("Start Auto Trader"):
-                # Get parameters from session state or settings
-                symbols = st.session_state.get('symbols', DEFAULT_SYMBOLS)
-                timeframe = st.session_state.get('timeframe', '1h')
-                capital = st.session_state.get('capital', CAPITAL)
-                risk_percent = st.session_state.get('risk_percent', RISK_PERCENT)
-                profit_target = st.session_state.get('profit_target', PROFIT_TARGET_PERCENT)
-                daily_profit_target = st.session_state.get('daily_profit_target', DAILY_PROFIT_TARGET_PERCENT)
-                
-                success, msg = start_auto_trader(
-                    symbols=symbols,
-                    timeframe=timeframe,
-                    capital=capital,
-                    risk_percent=risk_percent,
-                    profit_target=profit_target,
-                    daily_profit_target=daily_profit_target
-                )
-                
-                if success:
-                    st.success(msg)
-                else:
-                    st.error(msg)
-    
-    # Use signals if provided, otherwise calculate them
-    if signals is None:
-        signals, data_with_indicators = calculate_signals(data)
-        # Create a copy to avoid modifying input data
-        chart_data = data_with_indicators
-    else:
-        # Use input data for chart
-        chart_data = data
-    
-    # Add sentiment analysis display
-    if 'combined_signal' in signals:
-        combined_signal = signals['combined_signal']
-        st.subheader("Signal Analysis")
-        
-        # Create columns for displaying signal information
-        sig_col1, sig_col2, sig_col3 = st.columns(3)
-        
-        with sig_col1:
-            signal_color = {
-                'buy': 'green',
-                'sell': 'red',
-                'neutral': 'gray'
-            }.get(combined_signal['signal'], 'gray')
-            
-            st.markdown(f"""
-            <div style='background-color: rgba(0,0,0,0.1); padding: 15px; border-radius: 5px;'>
-                <h3 style='color: {signal_color}; margin:0;'>{combined_signal['signal'].upper()}</h3>
-                <p>Confidence: {combined_signal['confidence']:.2f}</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with sig_col2:
-            st.markdown(f"""
-            <div style='background-color: rgba(0,0,0,0.1); padding: 15px; border-radius: 5px; height: 100%;'>
-                <p style='margin:0;'><strong>Analysis:</strong></p>
-                <p>{combined_signal['reasoning']}</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with sig_col3:
-            if 'sentiment_signal' in combined_signal:
-                sentiment = combined_signal['sentiment_signal']
-                st.markdown(f"""
-                <div style='background-color: rgba(0,0,0,0.1); padding: 15px; border-radius: 5px;'>
-                    <p style='margin:0;'><strong>News Sentiment:</strong></p>
-                    <p>Score: {sentiment['score']:.2f}</p>
-                    <p>Articles: {sentiment.get('news_count', 0)} articles from {sentiment.get('source_count', 0)} sources</p>
-                </div>
-                """, unsafe_allow_html=True)
-    
+            st.write("**Sentiment Snapshot**")
+            st.caption("No live sentiment details available for this symbol.")
+
     chart = plot_candlestick_chart(chart_data, signals)
     st.plotly_chart(chart, use_container_width=True)
-    
-    # Trading interface
-    st.subheader("Manual Trading")
-    
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.subheader("Open Position")
-        
-        trade_direction = st.radio(
-            "Direction",
-            options=["Long", "Short"],
-            horizontal=True
-        )
-        
-        entry_price = st.number_input("Entry Price", value=last_price, format="%.2f", key="manual_entry_price")
-        
-        risk_percent = st.slider("Risk (%)", 0.5, 5.0, RISK_PERCENT, 0.1, key="manual_risk_percent")
-        
-        stop_distance = st.number_input(
-            "Stop Distance (%)",
-            value=2.0,
-            format="%.2f",
-            key="manual_stop_distance"
-        )
-        
-        # Calculate position size with validation
-        try:
-            if trade_direction == "Long":
-                direction = "long"
-                stop_price = entry_price * (1 - stop_distance / 100)
-            else:
-                direction = "short"
-                stop_price = entry_price * (1 + stop_distance / 100)
-            
-            # Validate entry and stop prices
-            if entry_price <= 0:
-                st.error("Entry price must be greater than zero")
-                position_size = 0
-            elif abs(entry_price - stop_price) < 0.0001:
-                st.error("Stop price is too close to entry price")
-                position_size = 0
-            else:
-                risk_amount = CAPITAL * risk_percent / 100
-                position_size = risk_amount / abs(entry_price - stop_price)
-                
-            st.info(f"Position Size: {position_size:.4f}")
-        except Exception as e:
-            st.error(f"Error calculating position size: {str(e)}")
-            position_size = 0
-        
-        # Calculate profit targets
-        try:
-            if trade_direction == "Long":
-                target1 = entry_price * (1 + stop_distance / 100)
-                target2 = entry_price * (1 + stop_distance / 100 * 1.5)
-                target3 = entry_price * (1 + stop_distance / 100 * 2)
-            else:
-                target1 = entry_price * (1 - stop_distance / 100)
-                target2 = entry_price * (1 - stop_distance / 100 * 1.5)
-                target3 = entry_price * (1 - stop_distance / 100 * 2)
-            
-            col_tp1, col_tp2, col_tp3 = st.columns(3)
-            with col_tp1:
-                st.metric("Target 1", f"{target1:.2f}")
-            with col_tp2:
-                st.metric("Target 2", f"{target2:.2f}")
-            with col_tp3:
-                st.metric("Target 3", f"{target3:.2f}")
-        except Exception as e:
-            st.error(f"Error calculating targets: {str(e)}")
-        
-        if st.button("Open Position"):
-            if position_size <= 0:
-                st.error("Invalid position size. Please check your inputs.")
-                return
-                
-            try:
-                current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                
-                trade_data = {
-                    'symbol': st.session_state.get('symbol', 'UNKNOWN'),
-                    'direction': direction,
-                    'entry_price': float(entry_price),
-                    'stop_loss': float(stop_price),
-                    'targets': [float(target1), float(target2), float(target3)],
-                    'size': float(position_size),
-                    'entry_time': current_time,
-                    'status': 'open'
-                }
-                
-                # Debug information
-                st.write(f"Adding trade: {trade_data['symbol']} {direction} at {entry_price}")
-                
-                # Add trade to database
-                success = add_trade_to_db(trade_data)
-                
-                if success:
-                    # Send alerts if enabled
-                    notification_options = st.session_state.get('notification_options', ['Console'])
-                    if "Telegram" in notification_options:
-                        send_alert(f"New trade opened: {direction} {trade_data['symbol']} at {entry_price}")
-                    if "Discord" in notification_options:
-                        send_discord_alert(f"New trade opened: {direction} {trade_data['symbol']} at {entry_price}")
-                    if "Slack" in notification_options:
-                        send_slack_alert(f"New trade opened: {direction} {trade_data['symbol']} at {entry_price}")
-                    
-                    st.success(f"{direction.capitalize()} position opened at {entry_price}")
-                    
-                    # Force a rerun to refresh the UI and show the new trade
-                    st.rerun()
-                else:
-                    st.error("Failed to add trade to database")
-            except Exception as e:
-                st.error(f"Error opening position: {str(e)}")
-                import traceback
-                st.code(traceback.format_exc())
 
-    with col2:
-        st.subheader("Close Position")
-        
-        # Get open trades from database
-        trades_df = get_trades_from_db()
-        if trades_df is None or trades_df.empty:
-            st.info("No open positions to close")
-            return
-        
-        open_trades = trades_df[trades_df['status'] == 'open']
-        
-        if open_trades.empty:
-            st.info("No open positions to close")
-        else:
-            # Format trade info for selectbox
-            trade_options = []
-            for _, trade in open_trades.iterrows():
-                trade_options.append(f"{trade['id']} - {trade['symbol']} {trade['direction']} at {trade['entry_price']}")
-            
-            selected_trade_option = st.selectbox("Select trade to close", trade_options)
-            
-            if selected_trade_option:
-                selected_trade_id = int(selected_trade_option.split(" - ")[0])
-                selected_trade = open_trades[open_trades['id'] == selected_trade_id].iloc[0]
-                
-                col_entry, col_dir = st.columns(2)
-                with col_entry:
-                    st.metric("Entry Price", f"{selected_trade['entry_price']:.2f}")
-                with col_dir:
-                    st.metric("Direction", selected_trade['direction'])
-                
-                exit_price = st.number_input("Exit Price", value=last_price, format="%.2f", key="close_exit_price")
-                
-                # Calculate PNL
-                pnl = calculate_pnl(
-                    selected_trade['entry_price'],
-                    exit_price,
-                    selected_trade['direction'],
-                    selected_trade['size']
-                )
-                
-                pnl_color = "green" if pnl >= 0 else "red"
-                st.markdown(f"<h3 style='color: {pnl_color};'>PNL: ${pnl:.2f}</h3>", unsafe_allow_html=True)
-                
-                if st.button("Close Position"):
-                    exit_data = {
-                        'exit_time': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        'exit_price': exit_price,
-                        'pnl': pnl,
-                        'status': 'closed'
-                    }
-                    
-                    update_trade_in_db(selected_trade_id, exit_data)
-                    
-                    # Send alerts if enabled
-                    notification_options = st.session_state.get('notification_options', ['Console'])
-                    if "Telegram" in notification_options:
-                        send_alert(f"Trade closed: {selected_trade['direction']} {selected_trade['symbol']} with PNL: ${pnl:.2f}")
-                    if "Discord" in notification_options:
-                        send_discord_alert(f"Trade closed: {selected_trade['direction']} {selected_trade['symbol']} with PNL: ${pnl:.2f}")
-                    if "Slack" in notification_options:
-                        send_slack_alert(f"Trade closed: {selected_trade['direction']} {selected_trade['symbol']} with PNL: ${pnl:.2f}")
-                    
-                    st.success(f"Position closed with PNL: ${pnl:.2f}")
-
-def render_trade_history_tab():
-    """Render the Trade History tab content"""
-    st.subheader("Trade History")
+def render_prediction_log_tab():
+    """Render the prediction outcome log tab content."""
+    st.subheader("Prediction Outcome Log")
     
-    # Get trades from database
+    # Load historical outcomes from local database
     trades_df = get_trades_from_db()
     
     if trades_df.empty:
-        st.info("No trade history available")
+        st.info("No historical prediction outcomes available")
     else:
         # Create filters
         col1, col2, col3 = st.columns(3)
@@ -352,11 +98,11 @@ def render_trade_history_tab():
             
         with col2:
             statuses = ['All'] + trades_df['status'].unique().tolist()
-            status_filter = st.selectbox("Filter by Status", statuses)
+            status_filter = st.selectbox("Filter by Outcome Status", statuses)
             
         with col3:
             directions = ['All'] + trades_df['direction'].unique().tolist()
-            direction_filter = st.selectbox("Filter by Direction", directions)
+            direction_filter = st.selectbox("Filter by Predicted Direction", directions)
         
         # Apply filters
         filtered_df = trades_df.copy()
@@ -383,13 +129,13 @@ def render_trade_history_tab():
                 
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.metric("Total PNL", f"${total_pnl:.2f}")
+                    st.metric("Net Outcome", f"${total_pnl:.2f}")
                 with col2:
-                    st.metric("Win Rate", f"{win_rate:.1f}%")
+                    st.metric("Positive Rate", f"{win_rate:.1f}%")
                 with col3:
-                    st.metric("Win Trades", f"{len(win_trades)}")
+                    st.metric("Positive Outcomes", f"{len(win_trades)}")
                 with col4:
-                    st.metric("Loss Trades", f"{len(loss_trades)}")
+                    st.metric("Negative Outcomes", f"{len(loss_trades)}")
         
         # Format data for display
         display_df = filtered_df.copy()
@@ -403,11 +149,20 @@ def render_trade_history_tab():
         display_df['entry_time'] = display_df['entry_time'].dt.strftime('%Y-%m-%d %H:%M')
         display_df['exit_time'] = display_df['exit_time'].dt.strftime('%Y-%m-%d %H:%M')
         
-        # Reorder columns
+        # Reorder and relabel columns for prediction context
+        display_df = display_df.rename(columns={
+            'direction': 'predicted_direction',
+            'status': 'outcome_status',
+            'entry_price': 'baseline_price',
+            'exit_price': 'resolved_price',
+            'pnl': 'outcome_delta',
+            'entry_time': 'signal_time',
+            'exit_time': 'resolution_time',
+        })
         columns_order = [
-            'id', 'symbol', 'direction', 'status',
-            'entry_price', 'exit_price', 'pnl',
-            'entry_time', 'exit_time'
+            'id', 'symbol', 'predicted_direction', 'outcome_status',
+            'baseline_price', 'resolved_price', 'outcome_delta',
+            'signal_time', 'resolution_time'
         ]
         display_df = display_df[columns_order]
         
@@ -418,27 +173,27 @@ def render_trade_history_tab():
         col1, col2 = st.columns(2)
         with col1:
             if st.button("Export to Excel"):
-                file_path = export_to_excel(filtered_df, "trade_history")
+                file_path = export_to_excel(filtered_df, "prediction_outcome_log")
                 st.success(f"Exported to {file_path}")
                 
         with col2:
             if st.button("Export to Google Sheets"):
-                sheet_url = export_to_google_sheets(filtered_df, "Trading Bot - Trade History")
+                sheet_url = export_to_google_sheets(filtered_df, "Market Prediction - Outcome Log")
                 if sheet_url:
                     st.success(f"Exported to Google Sheets")
                 else:
                     st.error("Failed to export to Google Sheets")
 
 def render_performance_tab():
-    """Render the Performance tab content"""
-    st.subheader("Performance Analytics")
+    """Render prediction performance analytics tab content."""
+    st.subheader("Prediction Outcome Analytics")
     
     # Get trades data
     trades_df = get_trades_from_db()
     closed_trades = trades_df[trades_df['status'] == 'closed'].copy()
     
     if closed_trades.empty:
-        st.info("No closed trades available for analysis")
+        st.info("No resolved outcomes available for analysis")
         return
     
     # Calculate daily PnL
@@ -446,19 +201,19 @@ def render_performance_tab():
     daily_pnl = closed_trades.groupby('date')['pnl'].sum().reset_index()
     daily_pnl['cumulative_pnl'] = daily_pnl['pnl'].cumsum()
     
-    # Plot cumulative PnL
-    st.subheader("Cumulative Profit/Loss")
+    # Plot cumulative outcome
+    st.subheader("Cumulative Outcome")
     import plotly.express as px
     
     fig = px.line(
         daily_pnl,
         x='date',
         y='cumulative_pnl',
-        title='Cumulative PnL Over Time'
+        title='Cumulative Outcome Over Time'
     )
     fig.update_layout(
         xaxis_title='Date',
-        yaxis_title='Cumulative PnL ($)'
+        yaxis_title='Cumulative Outcome ($)'
     )
     st.plotly_chart(fig, use_container_width=True)
     
@@ -466,7 +221,7 @@ def render_performance_tab():
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("Trading Statistics")
+        st.subheader("Outcome Statistics")
         
         total_pnl = closed_trades['pnl'].sum()
         win_trades = closed_trades[closed_trades['pnl'] > 0]
@@ -493,9 +248,9 @@ def render_performance_tab():
         
         stats = pd.DataFrame({
             'Metric': [
-                'Total PnL', 'Win Rate', 'Total Trades',
-                'Win Trades', 'Loss Trades', 'Avg Win',
-                'Avg Loss', 'Profit Factor', 'Max Drawdown'
+                'Net Outcome', 'Positive Rate', 'Total Resolved Signals',
+                'Positive Outcomes', 'Negative Outcomes', 'Avg Positive Outcome',
+                'Avg Negative Outcome', 'Outcome Factor', 'Max Drawdown'
             ],
             'Value': [
                 f"${total_pnl:.2f}", f"{win_rate:.1f}%", str(len(closed_trades)),
@@ -510,38 +265,38 @@ def render_performance_tab():
         st.dataframe(stats, use_container_width=True, hide_index=True)
     
     with col2:
-        st.subheader("Performance by Symbol")
+        st.subheader("Outcome by Symbol")
         
         symbol_perf = closed_trades.groupby('symbol').agg({
             'pnl': 'sum',
             'id': 'count'
         }).reset_index()
         
-        symbol_perf.columns = ['Symbol', 'PnL', 'Trades']
+        symbol_perf.columns = ['Symbol', 'Net Outcome', 'Resolved Signals']
         symbol_perf['Win Rate'] = [
             f"{len(closed_trades[(closed_trades['symbol'] == symbol) & (closed_trades['pnl'] > 0)]) / count * 100:.1f}%"
-            for symbol, count in zip(symbol_perf['Symbol'], symbol_perf['Trades'])
+            for symbol, count in zip(symbol_perf['Symbol'], symbol_perf['Resolved Signals'])
         ]
         
-        symbol_perf['PnL'] = symbol_perf['PnL'].apply(lambda x: f"${x:.2f}")
+        symbol_perf['Net Outcome'] = symbol_perf['Net Outcome'].apply(lambda x: f"${x:.2f}")
         
         st.dataframe(symbol_perf, use_container_width=True, hide_index=True)
     
     # Display monthly performance
-    st.subheader("Monthly Performance")
+    st.subheader("Monthly Outcome")
     closed_trades['month'] = closed_trades['exit_time'].dt.strftime('%Y-%m')
     monthly_perf = closed_trades.groupby('month').agg({
         'pnl': 'sum',
         'id': 'count'
     }).reset_index()
     
-    monthly_perf.columns = ['Month', 'PnL', 'Trades']
+    monthly_perf.columns = ['Month', 'Net Outcome', 'Resolved Signals']
     monthly_perf['Win Rate'] = [
         f"{len(closed_trades[(closed_trades['month'] == month) & (closed_trades['pnl'] > 0)]) / count * 100:.1f}%"
-        for month, count in zip(monthly_perf['Month'], monthly_perf['Trades'])
+        for month, count in zip(monthly_perf['Month'], monthly_perf['Resolved Signals'])
     ]
     
-    monthly_perf['PnL'] = monthly_perf['PnL'].apply(lambda x: f"${x:.2f}")
+    monthly_perf['Net Outcome'] = monthly_perf['Net Outcome'].apply(lambda x: f"${x:.2f}")
     
     st.dataframe(monthly_perf, use_container_width=True, hide_index=True)
 
@@ -549,38 +304,38 @@ def render_settings_tab():
     """Render the Settings tab content"""
     st.subheader("Application Settings")
     
-    # Risk management settings
-    st.subheader("Risk Management")
+    # Guardrail settings
+    st.subheader("Model Guardrails")
     risk_col1, risk_col2 = st.columns(2)
     
     with risk_col1:
-        capital = st.number_input("Trading Capital ($)", value=CAPITAL, format="%.2f", key="settings_capital")
-        risk_percent = st.number_input("Risk Per Trade (%)", value=RISK_PERCENT, format="%.2f", key="settings_risk_percent")
+        capital = st.number_input("Reference Capital ($)", value=CAPITAL, format="%.2f", key="settings_capital")
+        risk_percent = st.number_input("Max Risk Budget (%)", value=RISK_PERCENT, format="%.2f", key="settings_risk_percent")
     
     with risk_col2:
-        max_capital_per_trade = st.number_input("Max Capital Per Trade (%)", value=MAX_CAPITAL_PER_TRADE*100, format="%.2f", key="settings_max_capital")
-        st.info(f"Max trade size: ${capital * max_capital_per_trade/100:.2f}")
+        max_capital_per_trade = st.number_input("Max Allocation Per Signal (%)", value=MAX_CAPITAL_PER_TRADE*100, format="%.2f", key="settings_max_capital")
+        st.info(f"Max notional per signal: ${capital * max_capital_per_trade/100:.2f}")
     
-    # Save risk settings to session state
-    if st.button("Save Risk Settings"):
+    # Save guardrails to session state
+    if st.button("Save Guardrails"):
         st.session_state.capital = capital
         st.session_state.risk_percent = risk_percent
         st.session_state.max_capital_per_trade = max_capital_per_trade / 100
-        st.success("Risk settings saved!")
+        st.success("Guardrail settings saved!")
     
-    # Auto trading settings
-    st.subheader("Auto Trading Settings")
+    # Prediction settings
+    st.subheader("Prediction Settings")
     
     auto_col1, auto_col2 = st.columns(2)
     
     with auto_col1:
         # Update default symbols to use Alpaca format (USD instead of USDT)
         default_symbols = [s.replace('USDT', 'USD') for s in DEFAULT_SYMBOLS]
-        symbols_input = st.text_input("Trading Symbols (comma-separated)", value=",".join(default_symbols))
-        profit_target = st.number_input("Profit Target (%)", value=PROFIT_TARGET_PERCENT, format="%.2f", key="settings_profit_target")
+        symbols_input = st.text_input("Watchlist Symbols (comma-separated)", value=",".join(default_symbols))
+        profit_target = st.number_input("Signal Target Threshold (%)", value=PROFIT_TARGET_PERCENT, format="%.2f", key="settings_profit_target")
     
     with auto_col2:
-        daily_profit_target = st.number_input("Daily Profit Target ($)", value=DAILY_PROFIT_TARGET_PERCENT, format="%.2f", key="settings_daily_target")
+        daily_profit_target = st.number_input("Daily Signal Budget", value=DAILY_PROFIT_TARGET_PERCENT, format="%.2f", key="settings_daily_target")
     
     # Advanced settings
     show_advanced = st.checkbox("Show Advanced Settings")
@@ -601,8 +356,8 @@ def render_settings_tab():
         use_earnings = True
         earnings_weight = 0.6
     
-    # Save auto trading settings
-    if st.button("Save Auto Trading Settings"):
+    # Save prediction settings
+    if st.button("Save Prediction Settings"):
         symbols_list = [s.strip() for s in symbols_input.split(",") if s.strip()]
         
         st.session_state.symbols = symbols_list
@@ -613,7 +368,7 @@ def render_settings_tab():
         st.session_state.use_earnings = use_earnings
         st.session_state.earnings_weight = earnings_weight
         
-        st.success("Auto trading settings saved!")
+        st.success("Prediction settings saved!")
     
     # Notification settings
     st.subheader("Notification Settings")
@@ -637,7 +392,7 @@ def render_settings_tab():
     
     with strategy_col1:
         selected_strategy = st.selectbox(
-            "Trading Strategy",
+            "Prediction Strategy",
             options=strategy_options,
             index=0,
             key="settings_strategy"
@@ -744,3 +499,7 @@ def render_settings_tab():
                     st.session_state.combined_earnings_weight_value = earnings_weight / total_weight
                 
             st.success("Strategy settings saved!")
+
+# Backward-compatible alias for older imports
+def render_trade_history_tab():
+    return render_prediction_log_tab()
