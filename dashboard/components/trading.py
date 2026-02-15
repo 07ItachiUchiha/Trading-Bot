@@ -25,7 +25,7 @@ except ImportError:
     NEWS_API_KEY = os.environ.get("NEWS_API_KEY", "")
     ALPHAVANTAGE_API_KEY = os.environ.get("ALPHAVANTAGE_API_KEY", "")
     FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", "")
-    FINNHUB_WEBHOOK_SECRET = os.environ.get("FINNHUB_WEBHOOK_SECRET", "d0csqrpr01ql2j3fac90")
+    FINNHUB_WEBHOOK_SECRET = os.environ.get("FINNHUB_WEBHOOK_SECRET", "")
     if not API_KEY or not API_SECRET:
         print("Warning: API keys not found in config or environment variables")
 
@@ -49,7 +49,7 @@ sentiment_analyzer = None
 signal_processor = None
 
 def initialize_analyzers():
-    """Initialize the sentiment analyzer and signal processor if not already initialized"""
+    """Set up sentiment analyzer and signal processor if they haven't been created yet."""
     global sentiment_analyzer, signal_processor
     
     if sentiment_analyzer is None:

@@ -2,12 +2,7 @@ import streamlit as st
 from datetime import datetime
 
 def register_position_with_monitor(trade_data):
-    """
-    Register a new position with the position monitor
-    
-    Args:
-        trade_data (dict): Trade data including all risk management settings
-    """
+    """Hook a new trade into the position monitor for automated exit management."""
     # Ensure position_monitor exists in session state
     if 'position_monitor' not in st.session_state:
         from dashboard.components.position_monitor import PositionMonitor
@@ -42,14 +37,12 @@ def register_position_with_monitor(trade_data):
             position_data['use_time_exit'] = True
             position_data['exit_time'] = trade_data.get('exit_time')
         
-        # NEW: Add max loss exit settings
+        # max loss exit settings
         if trade_data.get('use_max_loss_exit'):
             position_data['use_max_loss_exit'] = True
             position_data['max_loss_percent'] = trade_data.get('max_loss_percent', 5.0)
         
-        # Add the position to the monitor
         monitor.add_position(trade_data['id'], position_data)
         
-        # Start monitoring if not already running
         if not monitor.running:
             monitor.start_monitoring()

@@ -4,10 +4,9 @@ from datetime import datetime
 
 class VolatilityBreakoutStrategy(bt.Strategy):
     """
-    Backtrader implementation of the Volatility Breakout Strategy
-    
-    This strategy detects consolidation periods followed by volatility breakouts
-    with volume confirmation and implements a comprehensive risk management system.
+    Looks for Bollinger Band squeezes (consolidation) then enters on breakout
+    with volume + RSI momentum confirmation. Uses ATR-based stops and
+    scales out at multiple R:R targets.
     """
     params = (
         ('bb_period', 20),

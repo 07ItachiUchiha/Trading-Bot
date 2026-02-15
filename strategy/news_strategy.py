@@ -8,13 +8,12 @@ import os
 import time
 from utils.news_fetcher import NewsFetcher
 
-# Download NLTK resources if not already downloaded
+# download NLTK stuff if needed
 try:
     nltk.data.find('vader_lexicon')
 except LookupError:
     nltk.download('vader_lexicon', quiet=True)
 
-# Download more NLTK resources for topic analysis if needed
 try:
     nltk.data.find('punkt')
     nltk.data.find('stopwords')
@@ -28,45 +27,34 @@ from collections import Counter
 
 class NewsBasedStrategy:
     """
-    A trading strategy that uses news sentiment analysis to generate trading signals.
-    
-    This strategy:
-    1. Fetches recent news for a given asset
-    2. Analyzes the sentiment of the news
-    3. Generates trading signals based on sentiment and keywords
-    4. Can be combined with technical strategies for confirmation
-    5. Detects emerging news trends
+    Fetches news, runs VADER sentiment, and generates buy/sell signals
+    based on whether recent headlines are positive or negative.
+    Can also detect trending topics for extra signal weighting.
     """
     
     def __init__(self, config=None):
-        """
-        Initialize the news-based trading strategy
-        
-        Args:
-            config (dict): Strategy configuration
-        """
-        # Default configuration
+        # default config
         self.config = {
-            'news_lookback_days': 1,            # Days to look back for news
-            'sentiment_threshold_buy': 0.2,     # Minimum sentiment score to consider buying
-            'sentiment_threshold_sell': -0.15,  # Maximum sentiment score to consider selling
-            'min_news_count': 3,                # Minimum number of news items required
-            'use_keyword_boost': True,          # Boost sentiment based on keywords
+            'news_lookback_days': 1,
+            'sentiment_threshold_buy': 0.2,
+            'sentiment_threshold_sell': -0.15,
+            'min_news_count': 3,
+            'use_keyword_boost': True,
             'api_keys': {
                 'news_api': None,
                 'alphavantage': None,
                 'finnhub': None
             },
-            'cache_expiry_minutes': 30,         # Cache news for 30 minutes
-            'use_trend_detection': True,        # Enable trend detection in news
-            'trend_weight': 0.3,                # Weight to give to trending topics
+            'cache_expiry_minutes': 30,
+            'use_trend_detection': True,
+            'trend_weight': 0.3,
         }
         
         # Update with provided configuration
         if config:
             self.config.update(config)
         
-        # Initialize news fetcher
+        # news fetcher handles the actual API calls
         self.news_fetcher = NewsFetcher()
         if self.config['api_keys']['news_api']:
             self.news_fetcher.set_api_keys(
@@ -75,10 +63,10 @@ class NewsBasedStrategy:
                 finnhub_key=self.config['api_keys']['finnhub']
             )
         
-        # Initialize sentiment analyzer
+        # VADER for sentiment scoring
         self.sentiment_analyzer = SentimentIntensityAnalyzer()
         
-        # Keywords that might indicate positive or negative news
+        # keywords that boost/penalize sentiment
         self.positive_keywords = [
             'surge', 'jump', 'soar', 'rise', 'gain', 'bull', 'bullish', 'breakthrough',
             'record high', 'outperform', 'beat', 'exceed', 'positive', 'strong', 
@@ -93,21 +81,14 @@ class NewsBasedStrategy:
             'recall', 'failure', 'loss', 'bankruptcy', 'debt', 'fine', 'penalty'
         ]
         
-        # Extra weight for company/crypto-specific keywords
+        # per-asset keyword overrides
         self.company_specific_keywords = {}
         
-        # Stop words for trend analysis
+        # stopwords for trend detection
         self.stop_words = set(stopwords.words('english')) if 'stopwords' in nltk.data.path else set()
     
     def set_company_keywords(self, symbol, positive_words=None, negative_words=None):
-        """
-        Set company-specific keywords that might impact trading decisions
-        
-        Args:
-            symbol (str): The trading symbol (e.g., AAPL, BTCUSD)
-            positive_words (list): List of positive keywords specific to this symbol
-            negative_words (list): List of negative keywords specific to this symbol
-        """
+        """Add custom bullish/bearish keywords for a specific ticker."""
         if not positive_words:
             positive_words = []
             
@@ -120,24 +101,7 @@ class NewsBasedStrategy:
         }
     
     def generate_signal(self, symbol, current_price=None, technical_signal=None):
-        """
-        Generate a trading signal based on news sentiment
-        
-        Args:
-            symbol (str): Trading symbol (e.g., AAPL, BTCUSD)
-            current_price (float): Current price of the asset (optional)
-            technical_signal (str): Signal from technical analysis (optional)
-            
-        Returns:
-            dict: Trading signal with the following keys:
-                - 'signal': 'buy', 'sell', or 'neutral'
-                - 'confidence': Signal confidence score (0-1)
-                - 'reasoning': Explanation for the signal
-                - 'news_count': Number of news items analyzed
-                - 'sentiment_score': Overall sentiment score
-                - 'top_headlines': List of top headlines influencing the decision
-                - 'trending_topics': List of trending topics (if enabled)
-        """
+        """Main method - fetch news, score sentiment, return buy/sell/neutral."""
         # Fetch news for the symbol with automatic sentiment analysis
         news = self.news_fetcher.get_news_for_symbol(
             symbol, 
@@ -228,17 +192,7 @@ class NewsBasedStrategy:
         }
     
     def filter_news_by_category(self, symbol, categories=None, days=1):
-        """
-        Get news filtered by specific categories
-        
-        Args:
-            symbol (str): Trading symbol
-            categories (list): Categories to filter by (e.g., 'earnings', 'merger', 'product')
-            days (int): Number of days to look back
-            
-        Returns:
-            dict: Dictionary mapping categories to news items
-        """
+        """Group news articles by category (earnings, product, legal, etc)."""
         if categories is None:
             categories = ['earnings', 'product', 'merger', 'legal', 'management']
             
@@ -270,16 +224,7 @@ class NewsBasedStrategy:
         return filtered_news
     
     def get_sentiment_summary(self, symbol, days=7):
-        """
-        Get a summary of sentiment trends over time
-        
-        Args:
-            symbol (str): Trading symbol
-            days (int): Number of days to analyze
-            
-        Returns:
-            dict: Sentiment summary statistics and trends
-        """
+        """Get aggregated sentiment stats over a time period."""
         news = self.news_fetcher.get_news_for_symbol(
             symbol, days=days, max_items=100, analyze_sentiment=True
         )
@@ -317,7 +262,7 @@ class NewsBasedStrategy:
         }
     
     def _apply_keyword_boost(self, news_item, symbol, sentiment=None):
-        """Apply keyword-based sentiment boost"""
+        # bump sentiment up/down based on keyword matches in the headline
         text = f"{news_item['title']} {news_item.get('description', '')}"
         if sentiment is None:
             sentiment = news_item.get('sentiment', 0)
@@ -345,16 +290,7 @@ class NewsBasedStrategy:
         return max(-1, min(1, sentiment))
         
     def _detect_trending_topics(self, news_items, min_occurrences=2):
-        """
-        Detect trending topics in news articles
-        
-        Args:
-            news_items (list): List of news items
-            min_occurrences (int): Minimum occurrences to consider a topic trending
-            
-        Returns:
-            list: List of (topic, count) tuples sorted by count
-        """
+        # find words that appear multiple times across headlines
         # Combine all text
         all_text = ""
         for item in news_items:
@@ -381,16 +317,7 @@ class NewsBasedStrategy:
             return []
             
     def _analyze_trend_sentiment(self, trending_topics, news_items):
-        """
-        Analyze sentiment of trending topics
-        
-        Args:
-            trending_topics (list): List of (topic, count) tuples
-            news_items (list): List of news items
-            
-        Returns:
-            float: Sentiment score for trending topics
-        """
+        # average sentiment of articles that mention trending words
         # Extract topics
         topics = [topic for topic, _ in trending_topics]
         

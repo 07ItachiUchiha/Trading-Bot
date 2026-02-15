@@ -14,11 +14,10 @@ from strategy.auto_trading_manager import AutoTradingManager
 from utils.finnhub_webhook import start_webhook_server, subscribe_to_event
 from config import (
     API_KEY, API_SECRET, DEFAULT_SYMBOLS, CAPITAL, RISK_PERCENT,
-    PROFIT_TARGET_PERCENT, DAILY_PROFIT_TARGET_PERCENT
+    PROFIT_TARGET_PERCENT, DAILY_PROFIT_TARGET_PERCENT, FINNHUB_WEBHOOK_SECRET
 )
 
 def setup_logging():
-    """Setup logging configuration"""
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
     
@@ -34,12 +33,10 @@ def setup_logging():
     
     # Create a logger for this module
     logger = logging.getLogger("run_bot")
-    logger.info("Logging initialized")
     
     return logger
 
 def parse_args():
-    """Parse command line arguments"""
     parser = argparse.ArgumentParser(description='Run the trading bot')
     
     parser.add_argument('--symbols', type=str, nargs='+', default=DEFAULT_SYMBOLS,
@@ -68,19 +65,23 @@ def parse_args():
     return parser.parse_args()
 
 def main():
-    """Main entry point"""
     args = parse_args()
     logger = setup_logging()
     
-    logger.info(f"Starting trading bot with symbols: {args.symbols}")
+    logger.info(f"Starting bot with symbols: {args.symbols}")
     
-    # Start webhook server if enabled
-    if not args.no_webhook:
+    # start webhook server if enabled and securely configured
+    webhook_enabled = not args.no_webhook
+    if webhook_enabled and not FINNHUB_WEBHOOK_SECRET:
+        logger.error(
+            "Webhook server disabled: FINNHUB_WEBHOOK_SECRET is not configured."
+        )
+        webhook_enabled = False
+
+    if webhook_enabled:
         logger.info("Starting Finnhub webhook server")
         webhook_thread = start_webhook_server(args.webhook_host, args.webhook_port)
-        
-        # Wait a moment to ensure the server starts
-        time.sleep(1)
+        time.sleep(1)  # give the server a sec to start up
     
     # Create trading manager
     try:
@@ -95,11 +96,11 @@ def main():
             use_earnings=args.use_earnings
         )
         
-        # Connect webhook events if available
-        if not args.no_webhook and trading_manager.news_strategy:
-            logger.info("Connecting webhook events to news strategy")
+        # hook up webhook events to manager handlers
+        if webhook_enabled:
+            logger.info("Wiring up webhook events")
             try:
-                subscribe_to_event('news', trading_manager.news_strategy.process_news)
+                subscribe_to_event('news', trading_manager.process_news_event)
                 subscribe_to_event('earnings', trading_manager.process_earnings_event)
             except Exception as e:
                 logger.error(f"Error connecting webhook events: {e}")

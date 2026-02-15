@@ -9,20 +9,10 @@ import alpaca_trade_api as tradeapi
 import requests
 
 class MarketDataManager:
-    """
-    Manages market data including fetching, caching, and preprocessing.
-    Supports Alpaca data source only (removed Binance).
-    """
+    """Fetches, caches, and preprocesses market data via Alpaca API."""
     
     def __init__(self, api_keys=None, config=None):
-        """
-        Initialize the market data manager with API keys and configuration
-        
-        Args:
-            api_keys (dict): API keys for different data sources
-            config (dict): Configuration parameters
-        """
-        # Default configuration
+        # defaults
         self.config = {
             'default_timeframe': '1h',
             'cache_expiry': {
@@ -57,7 +47,7 @@ class MarketDataManager:
         if config:
             self.config.update(config)
         
-        # API keys for Alpaca only (removed Binance)
+        # Alpaca API keys
         self.api_keys = {
             'alpaca': {
                 'key': None,
@@ -83,34 +73,21 @@ class MarketDataManager:
         else:
             self.alpaca = None
         
-        # Initialize data cache
+        # data cache
         self.data_cache = {}
         
         # Ensure cache directory exists
         os.makedirs(self.config['cache_dir'], exist_ok=True)
         
-        # Set up logging
         self.logger = logging.getLogger('MarketDataManager')
     
     def get_historical_data(self, symbol, timeframe=None, limit=None):
-        """
-        Get historical price data for a symbol
-        
-        Args:
-            symbol (str): Trading symbol
-            timeframe (str): Timeframe for data (e.g., '1h', '1d')
-            limit (int): Maximum number of bars to fetch
-            
-        Returns:
-            pd.DataFrame: Historical price data
-        """
-        # Use default timeframe if none provided
+        """Fetch historical OHLCV data, using cache when possible."""
+        # Use defaults if not provided
         timeframe = timeframe or self.config['default_timeframe']
-        
-        # Use default limit if none provided
         limit = limit or self.config['max_bars'].get(timeframe, 500)
         
-        # Check cache first
+        # Check cache
         cache_key = f"{symbol}_{timeframe}"
         if cache_key in self.data_cache:
             cached_data = self.data_cache[cache_key]
@@ -148,7 +125,7 @@ class MarketDataManager:
         return data
     
     def _fetch_from_alpaca(self, symbol, timeframe, limit):
-        """Fetch historical data from Alpaca API with improved error handling"""
+        """Fetch historical data from Alpaca with retries and caching."""
         try:
             if self.alpaca is None:
                 self.logger.error(f"Cannot fetch data for {symbol}: Alpaca API not initialized")
@@ -225,7 +202,7 @@ class MarketDataManager:
             return self._generate_mock_data(symbol, timeframe, limit)
     
     def _generate_mock_data(self, symbol, timeframe, limit):
-        """Generate mock price data when API fails, so trading can continue"""
+        """Generate fake price data when the API is down so the bot doesn't crash."""
         self.logger.info(f"Generating mock data for {symbol} with {timeframe} timeframe")
         
         # Current time
@@ -282,16 +259,8 @@ class MarketDataManager:
         return mock_data
     
     def _save_to_disk_cache(self, symbol, timeframe, data):
-        """
-        Save market data to disk cache
-        
-        Args:
-            symbol (str): Trading symbol
-            timeframe (str): Timeframe for data
-            data (pd.DataFrame): Market data
-        """
+        """Persist market data to a CSV file."""
         try:
-            # Create cache file path
             cache_file = os.path.join(
                 self.config['cache_dir'], 
                 f"{symbol}_{timeframe}.csv"
@@ -303,28 +272,16 @@ class MarketDataManager:
             self.logger.error(f"Error saving to disk cache: {e}")
     
     def _load_from_disk_cache(self, symbol, timeframe):
-        """
-        Load market data from disk cache
-        
-        Args:
-            symbol (str): Trading symbol
-            timeframe (str): Timeframe for data
-            
-        Returns:
-            pd.DataFrame: Market data or None
-        """
+        """Try loading cached data from disk. Returns None if not found."""
         try:
-            # Create cache file path
             cache_file = os.path.join(
                 self.config['cache_dir'], 
                 f"{symbol}_{timeframe}.csv"
             )
             
-            # Check if file exists
             if not os.path.exists(cache_file):
                 return None
             
-            # Load CSV
             data = pd.read_csv(cache_file)
             
             # Ensure time column is datetime
@@ -336,24 +293,13 @@ class MarketDataManager:
             return None
     
     def update_live_data(self, symbol, timeframe=None, latest_bar=None):
-        """
-        Update cached data with latest bar
-        
-        Args:
-            symbol (str): Trading symbol
-            timeframe (str): Timeframe for data
-            latest_bar (dict): Latest bar data
-            
-        Returns:
-            pd.DataFrame: Updated data
-        """
+        """Append or update the latest bar in our cached data."""
         if latest_bar is None:
             return None
             
-        # Use default timeframe if none provided
+        # Use default if not specified
         timeframe = timeframe or self.config['default_timeframe']
         
-        # Get cached data
         cache_key = f"{symbol}_{timeframe}"
         if cache_key not in self.data_cache:
             # Fetch historical data first
@@ -402,15 +348,7 @@ class MarketDataManager:
         return cached_data
     
     def get_current_price(self, symbol):
-        """
-        Get current price for a symbol
-        
-        Args:
-            symbol (str): Trading symbol
-            
-        Returns:
-            float: Current price or None
-        """
+        """Grab the latest price for a symbol from Alpaca."""
         try:
             if self.alpaca is not None:
                 # Determine if symbol is crypto
@@ -431,21 +369,13 @@ class MarketDataManager:
             return None
     
     def calculate_technical_indicators(self, data):
-        """
-        Calculate common technical indicators for a price dataframe
-        
-        Args:
-            data (pd.DataFrame): Price data with OHLCV columns
-            
-        Returns:
-            pd.DataFrame: Data with added technical indicators
-        """
+        """Add SMA, EMA, RSI, Bollinger, MACD, ATR, and volume ratios to the dataframe."""
         if data is None or len(data) < 20:
             return data
             
         df = data.copy()
         
-        # Add basic moving averages
+        # moving averages
         df['sma20'] = df['close'].rolling(window=20).mean()
         df['sma50'] = df['close'].rolling(window=50).mean()
         df['sma200'] = df['close'].rolling(window=200).mean()
@@ -454,7 +384,7 @@ class MarketDataManager:
         df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
         df['ema200'] = df['close'].ewm(span=200, adjust=False).mean()
         
-        # RSI calculation
+        # rsi
         delta = df['close'].diff()
         gain = np.where(delta > 0, delta, 0)
         loss = np.where(delta < 0, -delta, 0)
@@ -463,19 +393,19 @@ class MarketDataManager:
         rs = avg_gain / (avg_loss + 1e-10)  # Avoid division by zero
         df['rsi'] = 100 - (100 / (1 + rs))
 
-        # Bollinger Bands
+        # bollinger bands
         rolling_mean = df['close'].rolling(window=20)
         rolling_std = rolling_mean.std()
         df['upper_band'] = rolling_mean.mean() + (rolling_std * 2)
         df['lower_band'] = rolling_mean.mean() - (rolling_std * 2)
 
-        # MACD
+        # macd
         ema12 = df['close'].ewm(span=12, adjust=False).mean()
         ema26 = df['close'].ewm(span=26, adjust=False).mean()
         df['macd_line'] = ema12 - ema26
         df['macd_signal'] = df['macd_line'].ewm(span=9, adjust=False).mean()
 
-        # Calculate ATR
+        # atr
         high_low = df['high'] - df['low']
         high_close = (df['high'] - df['close'].shift()).abs()
         low_close = (df['low'] - df['close'].shift()).abs()
@@ -484,7 +414,7 @@ class MarketDataManager:
         true_range = ranges.max(axis=1)
         df['atr'] = true_range.rolling(window=14).mean()
         
-        # Calculate volume indicators
+        # volume stuff
         df['volume_sma20'] = df['volume'].rolling(window=20).mean()
         df['volume_ratio'] = df['volume'] / df['volume'].rolling(window=20).mean()
         

@@ -36,8 +36,6 @@ def main():
             display_trade_controls(symbol)
     
     with tab2:
-        # Get signal confidence from sentiment analysis (placeholder)
-        # In a real implementation, this would come from your sentiment analysis component
         signal_confidence = st.session_state.get('signal_confidence', 0.7)
         
         # Display risk management controls

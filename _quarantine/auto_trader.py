@@ -12,25 +12,10 @@ from strategy.strategy import detect_consolidation, detect_breakout, calculate_t
 from utils.risk_management import RiskManager
 
 class AutoTrader:
-    """
-    Automated trading system that combines news, earnings reports, and technical analysis
-    to execute trades with risk management.
-    
-    This autotrader:
-    1. Monitors market for trading opportunities using multiple strategies
-    2. Evaluates signals and executes trades based on confidence and risk parameters
-    3. Manages open positions with trailing stops and profit targets
-    4. Logs trading activity and performance metrics
-    """
+    """Runs the full trading loop — scans for signals, sizes positions, executes, and manages stops."""
     
     def __init__(self, broker_api=None, config=None):
-        """
-        Initialize the auto trader with broker API connection and configuration
-        
-        Args:
-            broker_api: API object for the broker to execute trades
-            config (dict): Configuration parameters
-        """
+        """Set up strategies, risk manager, and default config."""
         # Default configuration
         self.config = {
             'trading_enabled': False,        # Safety switch to enable/disable actual trading
@@ -94,12 +79,7 @@ class AutoTrader:
         self.logger.info("AutoTrader initialized with configuration: %s", json.dumps(self.config, indent=2))
     
     def is_trading_hours(self):
-        """
-        Check if current time is within trading hours
-        
-        Returns:
-            bool: True if within trading hours, False otherwise
-        """
+        """True if we're inside market hours."""
         now = datetime.now().time()
         start_time = datetime.strptime(self.config['trading_hours']['start'], '%H:%M').time()
         end_time = datetime.strptime(self.config['trading_hours']['end'], '%H:%M').time()
@@ -107,17 +87,7 @@ class AutoTrader:
         return start_time <= now <= end_time
     
     def get_market_data(self, symbol, timeframe='1h', bars=100):
-        """
-        Get market data for a symbol
-        
-        Args:
-            symbol (str): Trading symbol
-            timeframe (str): Timeframe for the data
-            bars (int): Number of bars to retrieve
-            
-        Returns:
-            pd.DataFrame: Market data with OHLCV
-        """
+        """Pull OHLCV bars from the broker."""
         if self.broker is None:
             self.logger.warning("No broker API connected, cannot fetch market data")
             return None
@@ -131,12 +101,7 @@ class AutoTrader:
             return None
     
     def scan_for_signals(self):
-        """
-        Scan all symbols for trading signals
-        
-        Returns:
-            dict: Dictionary of new trading signals by symbol
-        """
+        """Loop through the watchlist and check for entry setups."""
         new_signals = {}
         
         for symbol in self.config['symbols']:
@@ -186,21 +151,7 @@ class AutoTrader:
         return new_signals
     
     def _combine_signals(self, symbol, data, technical_buy, technical_sell, news_signal, earnings_signal, atr):
-        """
-        Combine different signal sources into a final trading signal
-        
-        Args:
-            symbol (str): Trading symbol
-            data (pd.DataFrame): Market data
-            technical_buy (bool): Technical buy signal
-            technical_sell (bool): Technical sell signal
-            news_signal (dict): Signal from news strategy
-            earnings_signal (dict): Signal from earnings strategy
-            atr (float): ATR value for position sizing
-            
-        Returns:
-            dict: Combined signal information
-        """
+        """Merge technical, news, and earnings signals into one decision."""
         # Start with neutral signal
         signal = 'neutral'
         confidence = 0.0
@@ -284,18 +235,7 @@ class AutoTrader:
         }
     
     def _calculate_position_size(self, symbol, entry_price, stop_loss, confidence):
-        """
-        Calculate appropriate position size based on risk parameters
-        
-        Args:
-            symbol (str): Trading symbol
-            entry_price (float): Entry price
-            stop_loss (float): Stop loss price
-            confidence (float): Signal confidence
-            
-        Returns:
-            float: Position size as fraction of portfolio
-        """
+        """Figure out how big of a position we can take given the stop distance and confidence."""
         # If no risk management or broker, use default sizing
         if self.broker is None or self.risk_manager is None:
             return self.config['max_position_size'] * confidence
@@ -332,12 +272,7 @@ class AutoTrader:
         return position_size
     
     def execute_signals(self):
-        """
-        Execute pending trading signals
-        
-        Returns:
-            int: Number of trades executed
-        """
+        """Go through pending signals and send orders for the best ones."""
         if not self.config['trading_enabled']:
             self.logger.info("Trading is disabled, skipping signal execution")
             return 0
@@ -412,19 +347,7 @@ class AutoTrader:
         return executed
     
     def execute_trade(self, symbol, direction, quantity, stop_loss, targets):
-        """
-        Execute a trade through the broker API
-        
-        Args:
-            symbol (str): Trading symbol
-            direction (str): 'buy' or 'sell'
-            quantity (float): Number of shares/contracts
-            stop_loss (float): Stop loss price
-            targets (list): Take profit target prices
-            
-        Returns:
-            dict: Trade execution result
-        """
+        """Send the actual order to the broker."""
         if self.broker is None:
             return {'success': False, 'message': 'No broker connected'}
         
@@ -459,16 +382,7 @@ class AutoTrader:
             return {'success': False, 'message': str(e)}
     
     def _calculate_order_quantity(self, symbol, signal_data):
-        """
-        Calculate order quantity based on position size and current price
-        
-        Args:
-            symbol (str): Trading symbol
-            signal_data (dict): Signal data including position size
-            
-        Returns:
-            float: Order quantity
-        """
+        """Turn position size (fraction of portfolio) into a share count."""
         if self.broker is None:
             return 0
             
@@ -495,12 +409,7 @@ class AutoTrader:
             return 0
     
     def manage_positions(self):
-        """
-        Manage open positions (trailing stops, partial profits, etc.)
-        
-        Returns:
-            int: Number of positions updated
-        """
+        """Check open positions and update trailing stops if targets have been hit."""
         if not self.config['trading_enabled'] or self.broker is None:
             return 0
             
@@ -595,12 +504,7 @@ class AutoTrader:
         return updated
     
     def cleanup_expired_signals(self):
-        """
-        Remove expired signals from tracking
-        
-        Returns:
-            int: Number of signals removed
-        """
+        """Drop signals that are too old to act on."""
         removed = 0
         symbols_to_remove = []
         
@@ -616,12 +520,7 @@ class AutoTrader:
         return removed
     
     def run_trading_cycle(self):
-        """
-        Run a complete trading cycle (scan, execute, manage)
-        
-        Returns:
-            dict: Summary of actions taken
-        """
+        """One full pass: cleanup, scan, execute, manage positions."""
         self.logger.info("Starting trading cycle")
         
         # Cleanup old signals
@@ -653,9 +552,7 @@ class AutoTrader:
         }
     
     def run(self):
-        """
-        Main execution loop for the auto trader
-        """
+        """Infinite loop that runs trading cycles until interrupted."""
         self.logger.info("Starting auto trader")
         
         try:

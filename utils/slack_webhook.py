@@ -4,10 +4,6 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger('slack_webhook')
 
 # Default token (should be overridden in config.py or dashboard settings)
@@ -15,30 +11,21 @@ SLACK_TOKEN = os.environ.get('SLACK_TOKEN', '')
 SLACK_CHANNEL = os.environ.get('SLACK_CHANNEL', '#trading-alerts')
 
 def send_slack_alert(message):
-    """
-    Send alert message to Slack channel
-    
-    Args:
-        message (str): The message to send
-        
-    Returns:
-        bool: True if successful, False otherwise
-    """
+    """Send an alert to a Slack channel."""
     try:
         # Check if token is available
         if not SLACK_TOKEN:
             logger.warning("Slack token not configured. Message not sent.")
             return False
             
-        # Initialize client
         client = WebClient(token=SLACK_TOKEN)
         
-        # Determine block color based on message content
-        color = "#36C5F0"  # default blue
+        # color by message type
+        color = "#36C5F0"
         if "NEW MANUAL TRADE" in message or "BUY SIGNAL" in message:
-            color = "#2EB67D"  # green
+            color = "#2EB67D"
         elif "POSITION CLOSED" in message or "SELL SIGNAL" in message:
-            color = "#E01E5A"  # red
+            color = "#E01E5A"
         
         # Send message with attachment
         response = client.chat_postMessage(

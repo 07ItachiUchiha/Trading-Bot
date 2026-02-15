@@ -10,7 +10,7 @@ from pathlib import Path
 DB_PATH = os.path.join(Path(__file__).parent.parent, "data", "trading_bot.db")
 
 # Secret key for JWT token
-SECRET_KEY = "trading_bot_secret_key"  # In production, use environment variable
+SECRET_KEY = os.environ.get("JWT_SECRET", "")
 
 def login(username, password):
     """Authenticate a user"""
@@ -32,20 +32,8 @@ def login(username, password):
     )
     ''')
     
-    # Create admin user if not exists
     cursor.execute("SELECT * FROM users WHERE username=?", (username,))
     user = cursor.fetchone()
-    
-    # If user doesn't exist and it's "admin", create the admin account
-    if not user and username == "admin":
-        hashed_password = bcrypt.hashpw("admin123".encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-        cursor.execute("INSERT INTO users (username, password, email, role) VALUES (?, ?, ?, ?)", 
-                      ("admin", hashed_password, "admin@tradingbot.com", "admin"))
-        conn.commit()
-        
-        # Fetch the newly created admin user
-        cursor.execute("SELECT * FROM users WHERE username=?", (username,))
-        user = cursor.fetchone()
     
     # Check password
     if user and bcrypt.checkpw(password.encode("utf-8"), user[2].encode("utf-8")):
@@ -57,6 +45,9 @@ def login(username, password):
 
 def create_token(user):
     """Create JWT token for authenticated user"""
+    if not SECRET_KEY:
+        raise RuntimeError("JWT_SECRET is not configured")
+
     expiration = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=1)
     payload = {
         "username": user["username"],
@@ -68,6 +59,9 @@ def create_token(user):
 
 def verify_token(token):
     """Verify JWT token"""
+    if not SECRET_KEY:
+        return None
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         return payload
@@ -104,10 +98,13 @@ def authenticate():
             if st.button("Login"):
                 user = login(username, password)
                 if user:
-                    token = create_token(user)
-                    st.session_state.user = user
-                    st.session_state.token = token
-                    st.success("Login successful!")
+                    try:
+                        token = create_token(user)
+                        st.session_state.user = user
+                        st.session_state.token = token
+                        st.success("Login successful!")
+                    except RuntimeError as e:
+                        st.error(str(e))
                 else:
                     st.error("Invalid username or password")
         

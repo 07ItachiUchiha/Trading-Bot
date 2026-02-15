@@ -19,12 +19,9 @@ except LookupError:
     nltk.download('vader_lexicon')
 
 class EnhancedSentimentAnalyzer:
-    """
-    Enhanced sentiment analysis for trading decisions with improved signal generation
-    """
+    """Multi-source news sentiment analyzer that generates buy/sell signals."""
     
     def __init__(self, api_keys=None):
-        """Initialize the sentiment analyzer with API keys"""
         self.api_keys = {
             'newsapi': None,
             'alphavantage': None,
@@ -34,42 +31,41 @@ class EnhancedSentimentAnalyzer:
         if api_keys:
             self.api_keys.update(api_keys)
         
-        # Initialize sentiment analysis tools
+        # VADER with custom financial lexicon
         self.vader = SentimentIntensityAnalyzer()
         
-        # Configure custom sentiment dictionary for financial terms
+        # add finance-specific words
         self.vader.lexicon.update({
-            # Positive terms
+            # positive
             'bull': 3.0, 'bullish': 3.0, 'rally': 2.5, 'uptick': 1.5, 
             'outperform': 2.0, 'upbeat': 1.8, 'upgrade': 2.0,
             'buy': 1.5, 'strong buy': 2.5, 'beat': 1.7,
             'growth': 1.5, 'profit': 1.8, 'gain': 1.5,
             
-            # Negative terms
+            # negative
             'bear': -3.0, 'bearish': -3.0, 'plunge': -2.5, 'downtick': -1.5,
             'underperform': -2.0, 'downbeat': -1.8, 'downgrade': -2.0,
             'sell': -1.5, 'strong sell': -2.5, 'miss': -1.7,
             'decline': -1.5, 'loss': -1.8, 'recession': -2.5
         })
         
-        # Cache for storing sentiment results
+        # cache
         self.sentiment_cache = {}
         
-        # Set up logging
         self.logger = logging.getLogger('EnhancedSentimentAnalyzer')
         
-        # Tracked symbols and their sentiment history
+        # history per symbol
         self.sentiment_history = {}
         
-        # News buffer for events
+        # incoming news buffer
         self.news_buffer = []
         self.news_lock = threading.Lock()
     
     def fetch_news(self, symbol, days_back=3):
-        """Fetch news for a specific symbol from multiple sources with improved integration"""
+        """Pull news from all configured API sources for a symbol."""
         results = []
         
-        # Remove USD suffix if present (for crypto)
+        # Remove USD suffix for search
         search_term = symbol.replace('/USD', '')
         if search_term.endswith('USD'):
             search_term = search_term[:-3]
@@ -87,7 +83,7 @@ class EnhancedSentimentAnalyzer:
                     news_data = response.json()
                     if news_data['status'] == 'ok' and len(news_data['articles']) > 0:
                         for article in news_data['articles']:
-                            # Filter out irrelevant articles with better keyword matching
+                            # Filter out irrelevant stuff
                             title = article['title'].lower()
                             if search_term.lower() in title or any(related in title for related in self._get_related_terms(search_term)):
                                 results.append({
@@ -97,15 +93,14 @@ class EnhancedSentimentAnalyzer:
                                     'source': article['source']['name'],
                                     'published_at': article['publishedAt'],
                                     'url': article['url'],
-                                    'relevance': 0.9 if search_term.lower() in title else 0.7  # Add relevance score
+                                    'relevance': 0.9 if search_term.lower() in title else 0.7
                                 })
             except Exception as e:
                 self.logger.error(f"Error fetching news from News API: {e}")
         
-        # Try Alpha Vantage with improved parameters
+        # Try Alpha Vantage
         if self.api_keys['alphavantage']:
             try:
-                # Use both ticker and name search for better results
                 url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={search_term}&topics=earnings,financial_markets,technology,economy_macro,finance&limit=50&apikey={self.api_keys['alphavantage']}"
                 response = requests.get(url)
                 
@@ -113,7 +108,7 @@ class EnhancedSentimentAnalyzer:
                     data = response.json()
                     if 'feed' in data:
                         for item in data['feed']:
-                            # Calculate relevance based on sentiment certainty and matching
+                            # score relevance based on ticker match
                             relevance = 0.6
                             if 'ticker_sentiment' in item:
                                 for ticker_sent in item['ticker_sentiment']:
@@ -135,7 +130,7 @@ class EnhancedSentimentAnalyzer:
             except Exception as e:
                 self.logger.error(f"Error fetching news from Alpha Vantage: {e}")
         
-        # Try Finnhub with improved parameters
+        # Try Finnhub
         if self.api_keys['finnhub']:
             try:
                 today = datetime.now()
@@ -148,7 +143,7 @@ class EnhancedSentimentAnalyzer:
                 if response.status_code == 200:
                     data = response.json()
                     for item in data:
-                        # Filter by relevance - Finnhub sometimes returns loosely related news
+                        # Finnhub sometimes returns loosely related stuff
                         if search_term.lower() in item['headline'].lower() or search_term.lower() in item.get('summary', '').lower():
                             results.append({
                                 'title': item['headline'],
@@ -162,7 +157,7 @@ class EnhancedSentimentAnalyzer:
             except Exception as e:
                 self.logger.error(f"Error fetching news from Finnhub: {e}")
         
-        # Try additional API: Tiingo for further sentiment enhancement
+        # Try Tiingo too
         if self.api_keys.get('tiingo'):
             try:
                 headers = {'Authorization': f"Token {self.api_keys['tiingo']}"}
@@ -185,7 +180,7 @@ class EnhancedSentimentAnalyzer:
             except Exception as e:
                 self.logger.error(f"Error fetching news from Tiingo: {e}")
         
-        # If no news from APIs, generate mock news for testing
+        # If no API results, fall back to mock data for testing
         if not results:
             self.logger.info(f"No API results found for {symbol}, generating mock news")
             try:
@@ -195,19 +190,19 @@ class EnhancedSentimentAnalyzer:
                 self.logger.error(f"_generate_mock_news method not found, using emergency fallback for {symbol}")
                 results = self._emergency_mock_news(symbol)
         else:
-            # Sort by relevance and recency - prioritize relevant recent news
+            # Sort by relevance + recency
             results = sorted(results, 
                              key=lambda x: (x.get('relevance', 0.5), 
                                            self._get_recency_weight(x.get('published_at'))),
                              reverse=True)
             
-            # Keep only the top 25 most relevant news items
+            # Keep top 25
             results = results[:25]
             
         return results
 
     def _get_recency_weight(self, published_at_str):
-        """Calculate recency weight with better time handling"""
+        """Exponential decay weight based on article age."""
         if not published_at_str:
             return 0.5
             
@@ -222,7 +217,7 @@ class EnhancedSentimentAnalyzer:
             # Calculate days since publication
             days_old = (datetime.now() - published_at).total_seconds() / 86400
             
-            # More sophisticated decay function: exponential decay with 3-day half-life
+            # exponential decay, 3-day half-life
             weight = 2 ** (-days_old / 3.0)
             return max(0.2, min(1.0, weight))
             
@@ -230,8 +225,8 @@ class EnhancedSentimentAnalyzer:
             return 0.5
 
     def _get_related_terms(self, symbol):
-        """Get related search terms for better news matching"""
-        # Map of symbols to related terms
+        """Map ticker symbols to related search keywords."""
+        # known mappings
         symbol_map = {
             'BTC': ['bitcoin', 'crypto', 'cryptocurrency', 'digital currency', 'btc'],
             'ETH': ['ethereum', 'crypto', 'defi', 'smart contract', 'eth', 'ether'],
@@ -244,7 +239,7 @@ class EnhancedSentimentAnalyzer:
             'AMZN': ['amazon', 'e-commerce', 'aws', 'cloud'],
         }
         
-        # Strip USD or other suffixes
+        # strip suffixes
         clean_symbol = symbol.replace('/USD', '').upper()
         if clean_symbol.endswith('USD'):
             clean_symbol = clean_symbol[:-3]
@@ -252,25 +247,21 @@ class EnhancedSentimentAnalyzer:
         return symbol_map.get(clean_symbol, [clean_symbol.lower()])
 
     def analyze_sentiment(self, symbol, news_items=None, days_back=3):
-        """
-        Analyze sentiment for a symbol based on recent news
-        Returns a detailed sentiment analysis with buy/sell signal
-        """
-        # Check cache first
+        """Run sentiment analysis on recent news for a symbol and produce a signal."""
+        # Check cache
         cache_key = f"{symbol}_{days_back}"
         current_time = time.time()
         
-        # Return cached result if available and not expired (30 minutes)
+        # return cached if not expired (30 min)
         if cache_key in self.sentiment_cache:
             timestamp, result = self.sentiment_cache[cache_key]
             if current_time - timestamp < 1800:  # 30 minutes
                 return result
         
-        # Fetch news if not provided
+        # Fetch news if needed
         if not news_items:
             news_items = self.fetch_news(symbol, days_back)
         
-        if not news_items:
             # No news found
             return {
                 'symbol': symbol,
@@ -284,7 +275,7 @@ class EnhancedSentimentAnalyzer:
                 'sources': []
             }
         
-        # Analyze sentiment for each news item
+        # Score each article
         article_sentiments = []
         total_score = 0
         sources = set()
@@ -296,14 +287,14 @@ class EnhancedSentimentAnalyzer:
             sources.add(item['source'])
             
             if 'sentiment_score' in item and item['sentiment_score'] is not None:
-                # Use pre-calculated sentiment if available
+                # use pre-calculated score if the API provided one
                 sentiment_score = item['sentiment_score']
             else:
-                # Calculate sentiment using VADER
+                # fall back to VADER
                 vader_score = self.vader.polarity_scores(text)
                 sentiment_score = vader_score['compound']
             
-            # Calculate recency weight (newer articles have more weight)
+            # Weight by recency (newer = more important)
             try:
                 published_at = item.get('published_at')
                 if published_at:
@@ -327,13 +318,13 @@ class EnhancedSentimentAnalyzer:
             
             total_score += sentiment_score * recency_weight
         
-        # Calculate overall sentiment
+        # Overall average
         if article_sentiments:
             avg_sentiment = total_score / len(article_sentiments)
         else:
             avg_sentiment = 0
         
-        # Track sentiment history
+        # Track history
         if symbol not in self.sentiment_history:
             self.sentiment_history[symbol] = []
             
@@ -342,16 +333,16 @@ class EnhancedSentimentAnalyzer:
             'sentiment': avg_sentiment
         })
         
-        # Keep only last 10 days of history
+        # Keep last 10 days
         self.sentiment_history[symbol] = self.sentiment_history[symbol][-10:]
         
-        # Calculate sentiment trend
+        # Calculate trend
         sentiment_trend = 0
         history = self.sentiment_history[symbol]
         if len(history) >= 2:
             sentiment_trend = history[-1]['sentiment'] - history[0]['sentiment']
         
-        # Determine sentiment category and signal
+        # Determine category + signal
         if avg_sentiment >= 0.5:
             sentiment = 'very positive'
             signal = 'strong buy'
@@ -365,7 +356,7 @@ class EnhancedSentimentAnalyzer:
         elif avg_sentiment > -0.2:
             sentiment = 'neutral'
             
-            # Consider sentiment trend for neutral overall sentiment
+            # Consider trend when overall is neutral
             if sentiment_trend > 0.2:
                 signal = 'buy'
                 strength = 0.3
@@ -389,14 +380,14 @@ class EnhancedSentimentAnalyzer:
             strength = 1.0
             confidence = min(0.9, 0.7 + (abs(avg_sentiment) - 0.5) * 0.4)
             
-        # Adjust confidence based on news count
+        # Adjust confidence by article count
         news_count = len(news_items)
         if news_count < 3:
-            confidence *= 0.7  # Reduced confidence with few news items
+            confidence *= 0.7
         elif news_count > 10:
-            confidence = min(0.95, confidence * 1.1)  # Higher confidence with many news items
+            confidence = min(0.95, confidence * 1.1)
         
-        # Create detailed result
+        # Build result
         result = {
             'symbol': symbol,
             'sentiment_score': avg_sentiment,
@@ -406,18 +397,18 @@ class EnhancedSentimentAnalyzer:
             'strength': strength * (1 if signal in ['buy', 'strong buy'] else -1),
             'news_count': news_count,
             'sentiment_trend': sentiment_trend,
-            'article_sentiments': article_sentiments[:5],  # Top 5 articles
+            'article_sentiments': article_sentiments[:5],
             'analysis': self._generate_analysis_summary(avg_sentiment, news_count, sentiment_trend, signal),
             'sources': list(sources)
         }
         
-        # Cache the result
+        # Cache it
         self.sentiment_cache[cache_key] = (current_time, result)
         
         return result
     
     def _generate_analysis_summary(self, sentiment_score, news_count, trend, signal):
-        """Generate a human-readable analysis summary"""
+        """Build a readable summary string from the analysis numbers."""
         if news_count == 0:
             return "Insufficient news data available for analysis."
         
@@ -462,7 +453,7 @@ class EnhancedSentimentAnalyzer:
         return summary
     
     def process_news_event(self, news_data):
-        """Process incoming news events from webhooks or other sources"""
+        """Ingest a news event from a webhook or external source."""
         with self.news_lock:
             self.news_buffer.append({
                 'timestamp': datetime.now(),
@@ -473,48 +464,43 @@ class EnhancedSentimentAnalyzer:
         self._process_news_buffer()
         
     def _process_news_buffer(self):
-        """Process news buffer for signals"""
+        """Check the buffer for anything we should re-analyze."""
         with self.news_lock:
             if not self.news_buffer:
                 return
                 
-            # Process the latest news
+            # Process latest
             latest_news = self.news_buffer[-1]['data']
             
-            # Clear old news (keep last 100 items maximum)
+            # trim old entries
             if len(self.news_buffer) > 100:
                 self.news_buffer = self.news_buffer[-100:]
                 
-        # Extract symbols and relevant information
+        # Extract symbols from the news
         if isinstance(latest_news, dict):
             symbols = set()
             
-            # Extract potential symbols from the news
+            # Extract potential symbols
             if 'symbols' in latest_news:
                 symbols.update(latest_news['symbols'])
             elif 'symbol' in latest_news:
                 symbols.add(latest_news['symbol'])
                 
-            # For any extracted symbols, update sentiment
+            # Re-analyze affected symbols
             for symbol in symbols:
                 if symbol in self.sentiment_history:
                     self.analyze_sentiment(symbol, days_back=1)
 
     def _generate_mock_news(self, symbol):
-        """Generate realistic mock news data for when API calls fail"""
+        """Create fake but realistic news for when APIs are unavailable."""
         import random
         from datetime import datetime, timedelta
         import logging
         
         logging.info(f"Generating mock news for {symbol}")
         
-        # Current time for reference
         now = datetime.now()
-        
-        # Prepare mock news items
         mock_news = []
-        
-        # Number of mock news to generate
         num_items = random.randint(5, 15)
         
         # Common sources
@@ -523,7 +509,7 @@ class EnhancedSentimentAnalyzer:
             "MarketWatch", "Yahoo Finance", "Investing.com", "Benzinga", "Forbes"
         ]
         
-        # Symbol-specific news templates
+        # templates per symbol
         news_templates = {
             "BTC": [
                 {"title": "Bitcoin Surges Above $TARGET_PRICE as Institutional Interest Grows", "sentiment": "positive"},
@@ -562,10 +548,10 @@ class EnhancedSentimentAnalyzer:
             ]
         }
         
-        # Extract the base symbol (remove /USD, etc.)
+        # Extract base symbol
         base_symbol = symbol.split('/')[0] if '/' in symbol else symbol
         
-        # Use the matching templates or generic if not found
+        # Use matching templates or fall back to generic
         templates = news_templates.get(base_symbol, [
             {"title": f"{base_symbol} Price Analysis: Bulls Target $TARGET_PRICE", "sentiment": "positive"},
             {"title": f"{base_symbol} Falls as Sellers Take Control", "sentiment": "negative"},
@@ -574,15 +560,14 @@ class EnhancedSentimentAnalyzer:
             {"title": f"Analyst Report: {base_symbol} Forecast Updated", "sentiment": "neutral"}
         ])
         
-        # Current mock price to use in templates
+        # Mock price for placeholders
         current_price = self._get_mock_price(base_symbol)
         
-        # Generate news items
         for i in range(num_items):
             # Select a random template
             template = random.choice(templates)
             
-            # Calculate a random target price based on sentiment
+            # price variation based on sentiment
             if template["sentiment"] == "positive":
                 target_price = current_price * (1 + random.uniform(0.05, 0.2))
             elif template["sentiment"] == "negative":
@@ -592,18 +577,14 @@ class EnhancedSentimentAnalyzer:
         
             # Format target price nicely
             formatted_price = f"{target_price:,.0f}" if target_price > 100 else f"{target_price:.2f}"
-            
-            # Replace placeholder with target price
             title = template["title"].replace("$TARGET_PRICE", formatted_price)
             
-            # Generate a random published time within the last week
+            # Random time in the last week
             days_ago = random.uniform(0, 7)
             published_time = (now - timedelta(days=days_ago)).isoformat()
-            
-            # Select a random source
             source = random.choice(sources)
             
-            # Construct a mock news item
+            # Build the item
             news_item = {
                 "title": title,
                 "summary": f"This is a mock summary for {title.lower()}.",
@@ -611,19 +592,19 @@ class EnhancedSentimentAnalyzer:
                 "source": source,
                 "url": f"https://example.com/mock-news/{i}",
                 "sentiment_score": self._mock_sentiment_score(template["sentiment"]),
-                "is_mock": True  # Flag to indicate this is mock data
+                "is_mock": True
             }
             
             mock_news.append(news_item)
         
-        # Sort by published time (most recent first)
+        # newest first
         mock_news.sort(key=lambda x: x["published"], reverse=True)
         
         return mock_news
 
     def _get_mock_price(self, symbol):
-        """Get a realistic mock price for a given symbol"""
-        # Base prices for common assets
+        """Rough prices for common assets (used in mock data)."""
+        # ballpark prices
         prices = {
             "BTC": 65000,
             "ETH": 3500,
@@ -639,7 +620,7 @@ class EnhancedSentimentAnalyzer:
         return prices.get(symbol, 100)
 
     def _mock_sentiment_score(self, sentiment_category):
-        """Generate a mock sentiment score based on category"""
+        """Random score in a range matching the category."""
         import random
         
         if sentiment_category == "positive":
@@ -650,7 +631,7 @@ class EnhancedSentimentAnalyzer:
             return random.uniform(0.45, 0.55)
         
     def _emergency_mock_news(self, symbol):
-        """Emergency fallback for mock news if main method fails"""
+        """Last-resort fallback if the main mock generator blows up."""
         self.logger.warning(f"Using emergency mock news generator for {symbol}")
         # Simplified version for emergency fallback
         now = datetime.now()

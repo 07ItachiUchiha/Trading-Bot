@@ -14,7 +14,6 @@ from strategy.auto_trading_manager import AutoTradingManager
 from config import DEFAULT_SYMBOLS, CAPITAL, RISK_PERCENT, PROFIT_TARGET_PERCENT, DAILY_PROFIT_TARGET_PERCENT
 
 def setup_logging():
-    """Set up logging configuration"""
     log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
     os.makedirs(log_dir, exist_ok=True)
     
@@ -33,7 +32,6 @@ def setup_logging():
     return logging.getLogger('run_auto_trader')
 
 def parse_arguments():
-    """Parse command line arguments"""
     parser = argparse.ArgumentParser(description='Run auto trading algorithm.')
     
     parser.add_argument('--symbols', nargs='+', default=None,
@@ -69,30 +67,17 @@ def parse_arguments():
     return parser.parse_args()
 
 def main():
-    """Main entry point for auto trader"""
-    # Set up logging
     logger = setup_logging()
     
     # Parse command line arguments
     args = parse_arguments()
     
-    # Convert symbols list if provided
     symbols = args.symbols if args.symbols else DEFAULT_SYMBOLS
     
-    logger.info(f"Starting auto trader with the following configuration:")
-    logger.info(f"Symbols: {symbols}")
-    logger.info(f"Timeframe: {args.timeframe}")
-    logger.info(f"Initial capital: ${args.capital}")
-    logger.info(f"Risk percent: {args.risk_percent}%")
-    logger.info(f"Profit target: {args.profit_target}%")
-    logger.info(f"Daily profit target: {args.daily_profit_target}%")
-    logger.info(f"Use news strategy: {args.use_news}")
-    logger.info(f"News weight: {args.news_weight}")
-    logger.info(f"Use earnings strategy: {args.use_earnings}")
-    logger.info(f"Earnings weight: {args.earnings_weight}")
+    logger.info(f"Starting auto trader")
+    logger.info(f"Symbols: {symbols} | Capital: ${args.capital} | Risk: {args.risk_percent}%")
     
     try:
-        # Initialize auto trading manager
         trader = AutoTradingManager(
             symbols=symbols,
             timeframe=args.timeframe,
@@ -106,7 +91,6 @@ def main():
             earnings_weight=args.earnings_weight
         )
         
-        # Run the trading algorithm
         trader.run()
         
     except KeyboardInterrupt:

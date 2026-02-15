@@ -9,7 +9,7 @@ class LoggingConfig:
     
     @staticmethod
     def setup():
-        """Set up logging with file and console handlers"""
+        """Set up file + console logging."""
         # Create logs directory if it doesn't exist
         logs_dir = Path("logs")
         logs_dir.mkdir(exist_ok=True)
@@ -22,7 +22,7 @@ class LoggingConfig:
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.INFO)
         
-        # Clear any existing handlers to avoid duplicate logs
+        # Clear existing handlers so we don't get duplicates
         if root_logger.handlers:
             for handler in root_logger.handlers:
                 root_logger.removeHandler(handler)

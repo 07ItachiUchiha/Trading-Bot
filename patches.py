@@ -1,6 +1,6 @@
 """
-Critical bug fixes and patches for the trading bot
-Apply these patches to fix immediate issues
+Hotfixes and workarounds that get applied on startup.
+Mostly numpy compat stuff, thread safety wrappers, and config validation.
 """
 
 import numpy as np
@@ -14,17 +14,17 @@ from pathlib import Path
 # =============================================================================
 
 def apply_numpy_nan_patch():
-    """Apply the numpy.NaN patch globally"""
+    """Backfill np.NaN for newer numpy versions."""
     if not hasattr(np, 'NaN'):
         np.NaN = np.nan
-        print("✅ Applied numpy.NaN patch")
+        print("Applied numpy.NaN patch")
 
 # =============================================================================
 # PATCH 2: Thread-safe auto trader management
 # =============================================================================
 
 class ThreadSafeAutoTrader:
-    """Thread-safe wrapper for auto trader management"""
+    """Wraps the auto trader so it can run in a background thread without race conditions."""
     
     def __init__(self):
         self._lock = threading.RLock()
@@ -93,7 +93,7 @@ class ThreadSafeAutoTrader:
 # =============================================================================
 
 class SafeDatabaseConnection:
-    """Thread-safe database connection manager"""
+    """SQLite wrapper that locks around queries so threads don't collide."""
     
     def __init__(self, db_path):
         self.db_path = Path(db_path)
@@ -103,7 +103,7 @@ class SafeDatabaseConnection:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
     
     def execute_query(self, query, params=None, fetch=False):
-        """Execute a query safely with connection management"""
+        """Run a query with automatic connection open/close."""
         import sqlite3
         
         with self._lock:
@@ -139,7 +139,7 @@ class SafeDatabaseConnection:
 # =============================================================================
 
 def validate_configuration():
-    """Validate trading bot configuration"""
+    """Sanity-check the config values before we start trading."""
     errors = []
     warnings = []
     
@@ -181,7 +181,7 @@ def validate_configuration():
 # =============================================================================
 
 class ImprovedWebSocketManager:
-    """Improved WebSocket manager with better error handling"""
+    """WebSocket manager with reconnect logic and exponential backoff."""
     
     def __init__(self, api_key, api_secret, base_url):
         self.api_key = api_key
@@ -195,7 +195,7 @@ class ImprovedWebSocketManager:
         self._ws = None
         
     def start(self):
-        """Start WebSocket connection with improved error handling"""
+        """Spin up the connection loop in a daemon thread."""
         with self._lock:
             if self._running:
                 return False
@@ -208,7 +208,7 @@ class ImprovedWebSocketManager:
             return True
     
     def stop(self):
-        """Stop WebSocket connection safely"""
+        """Kill the connection."""
         with self._lock:
             self._running = False
             if self._ws:
@@ -218,7 +218,7 @@ class ImprovedWebSocketManager:
                     pass
     
     def _connection_loop(self):
-        """Main connection loop with exponential backoff"""
+        """Keep reconnecting with backoff until max attempts."""
         while self._running and self._connection_attempts < self._max_attempts:
             try:
                 self._connect()
@@ -233,7 +233,7 @@ class ImprovedWebSocketManager:
                     threading.Event().wait(delay)
     
     def _connect(self):
-        """Establish WebSocket connection"""
+        """Actually open the websocket."""
         # Implementation would go here
         pass
 
@@ -242,27 +242,25 @@ class ImprovedWebSocketManager:
 # =============================================================================
 
 def apply_all_patches():
-    """Apply all critical patches"""
-    print("🔧 Applying critical patches...")
+    """Run all the patches in sequence."""
+    print("Applying patches...")
     
-    # Apply numpy patch
     apply_numpy_nan_patch()
     
-    # Validate configuration
     errors, warnings = validate_configuration()
     
     if errors:
-        print("❌ Configuration errors found:")
+        print("Config errors:")
         for error in errors:
             print(f"   - {error}")
         return False
     
     if warnings:
-        print("⚠️  Configuration warnings:")
+        print("Config warnings:")
         for warning in warnings:
             print(f"   - {warning}")
     
-    print("✅ All patches applied successfully")
+    print("All patches applied.")
     return True
 
 if __name__ == "__main__":

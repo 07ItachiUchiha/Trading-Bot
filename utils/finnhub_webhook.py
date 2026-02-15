@@ -1,163 +1,111 @@
-import json
-import logging
-import hmac
 import hashlib
+import hmac
+import logging
 import threading
-from flask import Flask, request, jsonify
+import time
 from datetime import datetime
-
-# Get the configuration
-import sys
 from pathlib import Path
+import sys
+
+from flask import Flask, jsonify, request
+
 sys.path.append(str(Path(__file__).parent.parent))
 from config import FINNHUB_WEBHOOK_SECRET
 
-# Configure logging
-logger = logging.getLogger('finnhub_webhook')
-
+logger = logging.getLogger("finnhub_webhook")
 app = Flask(__name__)
 
-# Event subscribers for different types of events
 event_subscribers = {
-    'trade': [],
-    'news': [],
-    'earnings': [],
-    'price_target': [],
-    'technical_signals': []
+    "trade": [],
+    "news": [],
+    "earnings": [],
+    "price_target": [],
+    "technical_signals": [],
 }
+
 
 def verify_webhook_signature(payload, signature):
     """
-    Verify the webhook signature from Finnhub
-    
-    Args:
-        payload: The webhook payload (raw bytes)
-        signature: The X-Finnhub-Signature header
-    
-    Returns:
-        bool: Whether the signature is valid
+    Verify the webhook signature from Finnhub.
+
+    This function is intentionally fail-closed: if secret is missing,
+    all webhook requests are rejected.
     """
     if not FINNHUB_WEBHOOK_SECRET:
-        logger.warning("No Finnhub webhook secret configured, skipping signature verification")
-        return True
-        
+        logger.error("No Finnhub webhook secret configured; rejecting webhook request")
+        return False
+
     try:
-        # Create expected signature
-        expected = hmac.new(
+        expected = hmac.HMAC(
             FINNHUB_WEBHOOK_SECRET.encode(),
             payload,
-            hashlib.sha256
+            hashlib.sha256,
         ).hexdigest()
-        
-        # Compare with provided signature
-        return hmac.compare_digest(expected, signature)
-    except Exception as e:
-        logger.error(f"Error verifying webhook signature: {e}")
+        return hmac.compare_digest(expected, signature or "")
+    except Exception as exc:
+        logger.error("Error verifying webhook signature: %s", exc)
         return False
 
-@app.route('/webhook/finnhub', methods=['POST'])
+
+@app.route("/webhook/finnhub", methods=["POST"])
 def finnhub_webhook():
-    """
-    Handle incoming webhooks from Finnhub
-    
-    This endpoint receives various events from Finnhub including:
-    - Earnings reports
-    - Price targets
-    - News
-    - Technical signals
-    """
-    # Verify webhook signature
-    signature = request.headers.get('X-Finnhub-Signature', '')
+    """Handle incoming webhooks from Finnhub."""
+    signature = request.headers.get("X-Finnhub-Signature", "")
     if not verify_webhook_signature(request.data, signature):
-        logger.warning(f"Invalid webhook signature received: {signature}")
+        logger.warning("Invalid webhook signature received: %s", signature)
         return jsonify({"status": "error", "message": "Invalid signature"}), 401
-    
+
     try:
-        # Parse the payload
-        payload = request.json
-        
+        payload = request.get_json(silent=True)
         if not payload:
             return jsonify({"status": "error", "message": "Empty payload"}), 400
-        
-        # Log the event
-        logger.info(f"Received Finnhub webhook: {payload.get('type', 'unknown')}")
-        
-        # Process different types of events
-        event_type = payload.get('type', 'unknown')
-        if event_type in event_subscribers:
-            # Notify subscribers
-            for callback in event_subscribers[event_type]:
-                # Use a thread to prevent blocking the response
-                threading.Thread(
-                    target=callback,
-                    args=(payload,),
-                    daemon=True
-                ).start()
-        
+
+        event_type = payload.get("type", "unknown")
+        logger.info("Received Finnhub webhook: %s", event_type)
+
+        callbacks = event_subscribers.get(event_type, [])
+        for callback in callbacks:
+            threading.Thread(target=callback, args=(payload,), daemon=True).start()
+
         return jsonify({"status": "success"}), 200
-        
-    except Exception as e:
-        logger.error(f"Error processing webhook: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+    except Exception as exc:
+        logger.error("Error processing webhook: %s", exc)
+        return jsonify({"status": "error", "message": str(exc)}), 500
+
 
 def subscribe_to_event(event_type, callback):
-    """
-    Subscribe to a specific type of Finnhub event
-    
-    Args:
-        event_type (str): The event type ('trade', 'news', 'earnings', etc.)
-        callback (function): The function to call when the event occurs
-        
-    Returns:
-        bool: Whether the subscription was successful
-    """
+    """Subscribe a callback to a webhook event type."""
     if event_type not in event_subscribers:
-        logger.error(f"Unknown event type: {event_type}")
+        logger.error("Unknown event type: %s", event_type)
         return False
-    
+
     event_subscribers[event_type].append(callback)
-    logger.info(f"Subscribed to {event_type} events")
+    logger.info("Subscribed to %s events", event_type)
     return True
 
-def start_webhook_server(host='0.0.0.0', port=8000):
-    """
-    Start the Flask server to receive webhooks
-    
-    Args:
-        host (str): Host to bind to
-        port (int): Port to listen on
-        
-    Returns:
-        threading.Thread: The server thread
-    """
+
+def start_webhook_server(host="0.0.0.0", port=8000):
+    """Start the Flask webhook server in a daemon thread."""
+
     def run_server():
         app.run(host=host, port=port)
-    
-    # Start Flask in a separate thread
+
     thread = threading.Thread(target=run_server, daemon=True)
     thread.start()
-    
-    logger.info(f"Finnhub webhook server started on {host}:{port}")
+    logger.info("Finnhub webhook server started on %s:%s", host, port)
     return thread
 
+
 if __name__ == "__main__":
-    # Configure logging when run directly
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
-    
-    # Example usage
+
     def handle_news_event(payload):
         print(f"News received at {datetime.now()}: {payload}")
-    
-    # Subscribe to news events
-    subscribe_to_event('news', handle_news_event)
-    
-    # Start the server
+
+    subscribe_to_event("news", handle_news_event)
     start_webhook_server()
-    
-    # Keep the main thread running
-    import time
     while True:
         time.sleep(1)

@@ -3,16 +3,7 @@ import numpy as np
 from datetime import datetime
 
 def append_to_dataframe(df, new_data):
-    """
-    Safely append data to a DataFrame, handling pandas' deprecated append method
-    
-    Args:
-        df (pd.DataFrame): Original DataFrame
-        new_data (dict or pd.DataFrame): New data to append
-        
-    Returns:
-        pd.DataFrame: Updated DataFrame with new data
-    """
+    """Append data to a DataFrame using concat (since .append is deprecated)."""
     # Convert dict to DataFrame if needed
     if isinstance(new_data, dict):
         new_row = pd.DataFrame([new_data])
@@ -21,28 +12,17 @@ def append_to_dataframe(df, new_data):
     else:
         raise ValueError("new_data must be a dictionary or DataFrame")
     
-    # Use pandas concat instead of append (which is deprecated)
+    # Use concat instead of deprecated append
     return pd.concat([df, new_row], ignore_index=True)
 
 def update_ohlc_candle(df, new_candle, match_column='time'):
-    """
-    Update an existing OHLC candle or append a new one
-    
-    Args:
-        df (pd.DataFrame): DataFrame containing OHLC data
-        new_candle (dict): New candle data
-        match_column (str): Column to match for updates (usually time or timestamp)
-        
-    Returns:
-        pd.DataFrame: Updated DataFrame
-    """
+    """Update an existing candle in the df or append if it's new."""
     if df.empty:
-        # Create a new DataFrame if original is empty
         return pd.DataFrame([new_candle])
     
-    # Ensure match_column exists in both the DataFrame and new_candle
+    # make sure we can actually match
     if match_column not in df.columns or match_column not in new_candle:
-        # Just append as new row if we can't match
+        # Just append if we can't match
         return append_to_dataframe(df, new_candle)
     
     # Convert to comparable format if timestamps
@@ -78,19 +58,11 @@ def update_ohlc_candle(df, new_candle, match_column='time'):
         return append_to_dataframe(df, new_candle)
 
 def clean_dataframe(df):
-    """
-    Clean a DataFrame by handling NaN values and ensuring proper types
-    
-    Args:
-        df (pd.DataFrame): DataFrame to clean
-        
-    Returns:
-        pd.DataFrame: Cleaned DataFrame
-    """
-    # Make a copy to avoid SettingWithCopyWarning
+    """Handle NaN values and ensure correct types in OHLCV data."""
+    # Make a copy
     result = df.copy()
     
-    # Convert timestamp column if it exists and isn't already datetime
+    # Convert timestamp if needed
     if 'time' in result.columns and not pd.api.types.is_datetime64_any_dtype(result['time']):
         try:
             result['time'] = pd.to_datetime(result['time'])
@@ -101,11 +73,10 @@ def clean_dataframe(df):
     numeric_cols = ['open', 'high', 'low', 'close', 'volume']
     for col in numeric_cols:
         if col in result.columns:
-            # Fill NaN values with appropriate defaults
             if col == 'volume':
                 result[col] = result[col].fillna(0)
             else:
-                # Forward fill price data
+                # ffill then bfill for price data
                 result[col] = result[col].fillna(method='ffill').fillna(method='bfill').fillna(0)
             
             # Ensure numeric type
@@ -114,15 +85,7 @@ def clean_dataframe(df):
     return result
 
 def validate_ohlc_data(data):
-    """
-    Validate OHLC (Open, High, Low, Close) data for correctness
-    
-    Args:
-        data (pd.DataFrame): DataFrame containing OHLC data
-        
-    Returns:
-        dict: Validation result with is_valid flag and any issues found
-    """
+    """Check OHLC data for basic correctness (missing cols, negative prices, outliers)."""
     issues = []
     is_valid = True
     
@@ -153,7 +116,7 @@ def validate_ohlc_data(data):
                 issues.append(f"Column {col} contains negative values")
                 is_valid = False
                 
-        # Check for extreme outliers (prices that are 100x different from adjacent candles)
+        # Check for extreme outliers (1000%+ move between candles)
         if len(data) > 1:
             for col in required_columns:
                 price_changes = data[col].pct_change().abs()

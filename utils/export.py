@@ -6,10 +6,6 @@ import datetime
 import json
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger('export')
 
 # Create exports directory if not exists
@@ -17,15 +13,7 @@ EXPORT_DIR = os.path.join(Path(__file__).parent.parent, "exports")
 os.makedirs(EXPORT_DIR, exist_ok=True)
 
 def export_to_excel(trades_df):
-    """
-    Export trade history to Excel file
-    
-    Args:
-        trades_df (pandas.DataFrame): DataFrame containing trade history
-        
-    Returns:
-        str: Path to exported Excel file
-    """
+    """Save trade history as an Excel file in exports/."""
     try:
         # Format data for export - create an explicit copy to avoid SettingWithCopyWarning
         export_df = trades_df.copy(deep=True)
@@ -51,15 +39,8 @@ def export_to_excel(trades_df):
 
 def export_to_google_sheets(trades_df):
     """
-    Export trade history to Google Sheets
-    Note: This is a placeholder function that demonstrates how it would work.
-    In a real implementation, this would use the Google Sheets API.
-    
-    Args:
-        trades_df (pandas.DataFrame): DataFrame containing trade history
-        
-    Returns:
-        str: URL to Google Sheet (mock)
+    Placeholder for Google Sheets export.
+    For now just saves a CSV - would need Sheets API credentials for the real thing.
     """
     try:
         # Format data for export - create an explicit copy to avoid SettingWithCopyWarning
@@ -77,10 +58,9 @@ def export_to_google_sheets(trades_df):
         # Write to CSV
         export_df.to_csv(file_path, index=False)
         
-        # In a real implementation, this would use Google Sheets API
-        # For demonstration, we just log the message and return a mock URL
-        logger.info(f"Trade history exported to CSV (ready for Google Sheets): {file_path}")
-        logger.info("NOTE: Google Sheets integration requires OAuth2 credentials and Google Sheets API setup")
+        # Would use Google Sheets API in production
+        logger.info(f"Trade history exported to CSV: {file_path}")
+        logger.info("Google Sheets integration needs OAuth2 creds + API setup")
         
         # Mock URL for demonstration
         sheet_url = "https://docs.google.com/spreadsheets/d/example-sheet-id"

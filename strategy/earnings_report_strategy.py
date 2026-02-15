@@ -13,36 +13,26 @@ logger = logging.getLogger('earnings_report_strategy')
 
 class EarningsReportStrategy:
     """
-    A strategy specifically designed to trade around earnings reports and economic data releases.
-    
-    This strategy:
-    1. Tracks upcoming earnings releases and economic events
-    2. Analyzes the impact of the report when released (beat/miss/in-line)
-    3. Executes trades based on predefined rules
-    4. Can implement pre-event and post-event trading strategies
+    Trades around earnings reports and economic data releases.
+    Monitors upcoming events, analyzes beat/miss signals, and
+    generates pre/post-event trading signals.
     """
     
     def __init__(self, config=None):
-        """
-        Initialize the earnings report strategy
-        
-        Args:
-            config (dict): Strategy configuration
-        """
-        # Default configuration
+        # default config
         self.config = {
-            'pre_event_days': 3,              # Days before event to start monitoring
-            'post_event_days': 2,             # Days after event to continue monitoring
-            'confidence_threshold': 0.7,      # Minimum confidence to execute a trade
-            'stop_loss_percent': 3.0,         # Stop loss percentage for event trades
-            'take_profit_percent': 5.0,       # Take profit percentage for event trades
-            'max_position_size': 0.1,         # Maximum position size as fraction of portfolio
+            'pre_event_days': 3,
+            'post_event_days': 2,
+            'confidence_threshold': 0.7,
+            'stop_loss_percent': 3.0,
+            'take_profit_percent': 5.0,
+            'max_position_size': 0.1,
             'api_keys': {
                 'news_api': None,
                 'alphavantage': None,
                 'finnhub': None
             },
-            'use_sentiment_boost': True,      # Use sentiment analysis to boost signals
+            'use_sentiment_boost': True,
             'earnings_keywords': [
                 'earnings', 'revenue', 'profit', 'loss', 'EPS', 'guidance',
                 'forecast', 'outlook', 'beat', 'miss', 'estimate', 'exceeded',
@@ -58,7 +48,7 @@ class EarningsReportStrategy:
         if config:
             self.config.update(config)
         
-        # Initialize news fetcher
+        # news fetcher + sentiment
         self.news_fetcher = NewsFetcher()
         if self.config['api_keys']['news_api']:
             self.news_fetcher.set_api_keys(
@@ -70,22 +60,17 @@ class EarningsReportStrategy:
         # Initialize news strategy for sentiment analysis
         self.news_strategy = NewsBasedStrategy(config)
         
-        # Track currently monitored events
+        # event tracking
         self.monitored_events = {}
         
-        # Cache for earnings calendars
+        # calendar caches
         self.earnings_calendar_cache = {}
         self.economic_calendar_cache = {}
         self.last_cache_update = 0
         self.cache_expiry = 6 * 60 * 60  # 6 hours
     
     def update_calendars(self):
-        """
-        Update the earnings and economic calendars
-        
-        Returns:
-            bool: True if update was successful, False otherwise
-        """
+        """Refresh earnings and economic calendars from API."""
         # Check if cache is still valid
         if time.time() - self.last_cache_update < self.cache_expiry:
             return True
@@ -146,16 +131,7 @@ class EarningsReportStrategy:
         return success
     
     def get_upcoming_events(self, symbol=None, days_ahead=7):
-        """
-        Get upcoming earnings and economic events
-        
-        Args:
-            symbol (str): Optional stock symbol to filter by
-            days_ahead (int): How many days ahead to look
-            
-        Returns:
-            dict: Dictionary containing earnings and economic events
-        """
+        """Fetch upcoming earnings + economic events, optionally filtered by symbol."""
         # Update calendars if needed
         self.update_calendars()
         
@@ -189,28 +165,18 @@ class EarningsReportStrategy:
         }
     
     def detect_earnings_event(self, symbol, news_items):
-        """
-        Detect if earnings or significant report was released
-        
-        Args:
-            symbol (str): Stock symbol
-            news_items (list): List of news items
-            
-        Returns:
-            dict: Event details or None if no event detected
-        """
+        """Look through news to see if an earnings report dropped."""
         for item in news_items:
             title = item.get("title", "").lower()
             description = item.get("description", "").lower()
             combined_text = f"{title} {description}"
             
-            # Check for earnings keywords
             keyword_matches = 0
             for keyword in self.config['earnings_keywords']:
                 if keyword.lower() in combined_text:
                     keyword_matches += 1
             
-            # If multiple earnings keywords found, likely an earnings report
+            # 3+ keyword hits = probably an actual earnings report
             if keyword_matches >= 3:
                 # Detect if beat, miss, or in-line
                 result = "unknown"
@@ -232,21 +198,12 @@ class EarningsReportStrategy:
         return None
     
     def detect_economic_event(self, news_items):
-        """
-        Detect if a significant economic event occurred
-        
-        Args:
-            news_items (list): List of news items
-            
-        Returns:
-            dict: Event details or None if no event detected
-        """
+        """Check news for major economic events (fed, cpi, jobs, etc)."""
         for item in news_items:
             title = item.get("title", "").lower()
             description = item.get("description", "").lower()
             combined_text = f"{title} {description}"
             
-            # Check for economic event keywords
             keyword_matches = 0
             matched_keywords = []
             for keyword in self.config['economic_event_keywords']:
@@ -254,9 +211,8 @@ class EarningsReportStrategy:
                     keyword_matches += 1
                     matched_keywords.append(keyword)
             
-            # If multiple economic keywords found, likely an economic event
+            # 2+ keyword hits = likely an economic event
             if keyword_matches >= 2:
-                # Determine the event type
                 event_type = "economic"
                 if "fed" in matched_keywords or "interest rate" in matched_keywords or "fomc" in matched_keywords:
                     event_type = "fed_decision"
@@ -269,7 +225,7 @@ class EarningsReportStrategy:
                 
                 return {
                     "type": event_type,
-                    "result": "unknown",  # Would need more complex logic to determine if good/bad
+                    "result": "unknown",
                     "news_item": item,
                     "detected_at": datetime.now().isoformat(),
                 }
@@ -277,17 +233,7 @@ class EarningsReportStrategy:
         return None
     
     def generate_signal(self, symbol, data=None, technical_signal=None):
-        """
-        Generate a trading signal based on earnings/economic events
-        
-        Args:
-            symbol (str): Trading symbol
-            data (pd.DataFrame): Optional price data
-            technical_signal (str): Optional technical signal
-            
-        Returns:
-            dict: Trading signal information
-        """
+        """Main signal logic - checks for earnings/economic events and returns buy/sell/neutral."""
         # Fetch recent news
         news = self.news_fetcher.get_news_for_symbol(
             symbol, 
@@ -430,20 +376,7 @@ class EarningsReportStrategy:
             }
     
     def should_exit_position(self, symbol, entry_price, position_type, entry_time, current_price, current_time):
-        """
-        Determine if we should exit an event-based position
-        
-        Args:
-            symbol (str): Trading symbol
-            entry_price (float): Entry price
-            position_type (str): 'long' or 'short'
-            entry_time (datetime): Entry time
-            current_price (float): Current price
-            current_time (datetime): Current time
-            
-        Returns:
-            tuple: (should_exit, reason)
-        """
+        """Check if we should close an event-based trade (SL/TP/time/reversal)."""
         # Calculate holding time
         holding_time = current_time - entry_time
         max_holding_days = self.config['post_event_days']
@@ -497,15 +430,7 @@ class EarningsReportStrategy:
         return (False, "Maintain position")
     
     def update_calendar(self, force=False):
-        """
-        Update the economic calendar data
-        
-        Args:
-            force (bool): Force update even if the data is recent
-            
-        Returns:
-            bool: True if updated successfully, False otherwise
-        """
+        """Refresh economic calendar, uses cache unless forced."""
         try:
             # Skip update if we've updated recently and not forcing
             if not force and self.last_cache_update and datetime.now() - self.last_cache_update < self.cache_expiry:
@@ -553,7 +478,7 @@ class EarningsReportStrategy:
             return False
     
     def _generate_mock_calendar(self):
-        """Generate mock calendar data for testing"""
+        """Fake calendar data for testing when no API key is set."""
         # Current date for reference
         now = datetime.now()
         
@@ -592,16 +517,7 @@ class EarningsReportStrategy:
         return {'data': events}
     
     def get_upcoming_events(self, symbol=None, days_ahead=7):
-        """
-        Get upcoming calendar events filtered by symbol
-        
-        Args:
-            symbol (str): Symbol to filter events for, or None for all events
-            days_ahead (int): Number of days ahead to look for events
-            
-        Returns:
-            list: List of upcoming events
-        """
+        """Get upcoming calendar events, optionally filtered by symbol."""
         # Update calendar if needed
         self.update_calendar()
         
@@ -631,17 +547,7 @@ class EarningsReportStrategy:
         return upcoming_events
     
     def get_signals(self, symbol, timeframe='1d', lookback_days=30):
-        """
-        Get trading signals based on earnings reports
-        
-        Args:
-            symbol (str): Symbol to generate signals for
-            timeframe (str): Timeframe for analysis
-            lookback_days (int): Days to look back for historical earnings
-            
-        Returns:
-            dict: Signal information including direction, confidence, and reasoning
-        """
+        """Get buy/sell/neutral signals based on proximity to earnings events."""
         try:
             # Ensure calendar is updated
             self.update_calendar()

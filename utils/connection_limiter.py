@@ -6,12 +6,7 @@ import logging
 logger = logging.getLogger('ConnectionLimiter')
 
 class ConnectionLimiter:
-    """
-    Utility class to prevent connection overload and rate limiting
-    
-    This singleton class tracks connection attempts across the application
-    and helps prevent 429 Too Many Requests errors.
-    """
+    """Singleton rate limiter to avoid 429 errors from APIs."""
     
     _instance = None
     _lock = threading.RLock()
@@ -25,8 +20,7 @@ class ConnectionLimiter:
             return cls._instance
     
     def __init__(self):
-        """Initialize connection tracking"""
-        self.connection_times = deque(maxlen=100)  # Track the last 100 connections
+        self.connection_times = deque(maxlen=100)
         self.connection_windows = {
             '1s': {'limit': 2, 'window': 1},       # Max 2 connections per second
             '10s': {'limit': 5, 'window': 10},     # Max 5 connections per 10 seconds
@@ -35,21 +29,20 @@ class ConnectionLimiter:
         }
     
     def track_connection(self):
-        """Record a connection attempt"""
+        """Log a connection attempt."""
         with self._lock:
             self.connection_times.append(time.time())
     
     def should_limit(self):
-        """Check if we should rate limit based on recent connections"""
+        """True if we've been connecting too fast."""
         with self._lock:
             now = time.time()
             
-            # Check each time window for rate limits
+            # Check each time window
             for window_name, config in self.connection_windows.items():
                 limit = config['limit']
                 window = config['window']
                 
-                # Count connections in this time window
                 count = sum(1 for t in self.connection_times if now - t < window)
                 
                 if count >= limit:
@@ -59,26 +52,25 @@ class ConnectionLimiter:
             return False
     
     def get_suggested_wait_time(self):
-        """Get suggested wait time before next connection attempt"""
+        """How long to wait before the next connection attempt."""
         with self._lock:
             if not self.connection_times:
                 return 0
                 
-            # Default wait time is 1 second
+            # default 1s wait
             wait_time = 1
             now = time.time()
             
             # Check each time window
             for window_name, config in self.connection_windows.items():
-                limit = config['limit']
                 window = config['window']
                 
                 # Get times in this window
                 times_in_window = [t for t in self.connection_times if now - t < window]
                 count = len(times_in_window)
                 
-                if count >= limit and times_in_window:
-                    # Calculate when the oldest connection will expire from this window
+                if count >= config['limit'] and times_in_window:
+                    # when will the oldest connection expire from this window
                     oldest = min(times_in_window)
                     time_until_free = (oldest + window) - now
                     wait_time = max(wait_time, time_until_free + 1)  # Add 1s margin

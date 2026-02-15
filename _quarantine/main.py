@@ -3,34 +3,30 @@ from binance.enums import *
 import pandas as pd
 import numpy as np
 
-# Add this patch to fix the NaN import issue in pandas_ta
-# This makes numpy.NaN available for pandas_ta modules that import it directly
+# fix for pandas_ta needing np.NaN which got removed
 if not hasattr(np, 'NaN'):
-    np.NaN = np.nan  # Use lowercase nan which is always available
+    np.NaN = np.nan
 
 import time
 from datetime import datetime
 import sys
 import traceback
-import pandas_ta as ta  # Changed from talib to pandas_ta
+import pandas_ta as ta
 
-# Import custom modules
 from strategy.strategy import check_entry
-from strategy.news_strategy import NewsBasedStrategy  # Import the news-based strategy
-from strategy.earnings_report_strategy import EarningsReportStrategy  # Import the earnings report strategy
+from strategy.news_strategy import NewsBasedStrategy
+from strategy.earnings_report_strategy import EarningsReportStrategy
 from utils.risk_management import calculate_position_size, manage_open_position
 from utils.telegram_alert import send_alert
-from config_manager import get_api_key, get_trading_config, ConfigManager  # Use new config manager
+from config_manager import get_api_key, get_trading_config, ConfigManager
 from utils.llm_integration import get_llm_response
 
-# Initialize configuration
 config_manager = ConfigManager()
 trading_config = config_manager.get_trading_config()
 
 class VolatilityBreakoutBot:
     def __init__(self, symbol='BTCUSDT', timeframe='1h', capital=None, risk_percent=None, 
                  use_news=True, news_weight=0.5, use_earnings=True, earnings_weight=0.6):
-        """Initialize the trading bot with configuration parameters"""
         
         # Use config manager for defaults
         if capital is None:
@@ -48,13 +44,11 @@ class VolatilityBreakoutBot:
         self.positions = {}  # Track open positions
         self.last_checked = None
         
-        # News strategy configuration
         self.use_news = use_news
-        self.news_weight = news_weight  # Weight of news signals vs technical signals (0-1)
+        self.news_weight = news_weight
         
-        # Earnings report strategy configuration
         self.use_earnings = use_earnings
-        self.earnings_weight = earnings_weight  # Weight of earnings signals (0-1)
+        self.earnings_weight = earnings_weight
         
         if self.use_news:
             # Configure news-based strategy
@@ -116,7 +110,7 @@ class VolatilityBreakoutBot:
         self._load_historical_data()
         
     def _convert_timeframe(self, timeframe):
-        """Convert user-friendly timeframe to Binance format"""
+        # map our timeframe strings to binance constants
         timeframe_map = {
             '1m': Client.KLINE_INTERVAL_1MINUTE,
             '5m': Client.KLINE_INTERVAL_5MINUTE,
@@ -128,7 +122,6 @@ class VolatilityBreakoutBot:
         return timeframe_map.get(timeframe, Client.KLINE_INTERVAL_1HOUR)
         
     def _load_historical_data(self):
-        """Load initial historical data"""
         try:
             klines = self.client.get_historical_klines(
                 self.symbol, self.timeframe, "100 hours ago UTC")
@@ -155,7 +148,6 @@ class VolatilityBreakoutBot:
             sys.exit(1)
     
     def _update_candles(self):
-        """Update candle data with latest from exchange"""
         try:
             # Get latest klines
             klines = self.client.get_klines(
@@ -187,7 +179,6 @@ class VolatilityBreakoutBot:
             return False
     
     def _process_news_signals(self):
-        """Process news data and get sentiment signals"""
         if not self.use_news:
             return None
             
@@ -197,8 +188,6 @@ class VolatilityBreakoutBot:
             
             # Get news sentiment
             sentiment_score, news_confidence, news_count = self.news_strategy.get_sentiment(base_currency)
-            
-            # Log the news sentiment information
             print(f"News sentiment for {base_currency}: Score={sentiment_score:.2f}, Confidence={news_confidence:.2f}, Count={news_count}")
             
             # Generate signal based on news sentiment
@@ -216,7 +205,6 @@ class VolatilityBreakoutBot:
             return None
     
     def _process_earnings_signals(self):
-        """Process earnings data and get trading signals"""
         if not self.use_earnings:
             return None
             
@@ -247,8 +235,8 @@ class VolatilityBreakoutBot:
             return None
     
     def _execute_trade(self, direction, confidence, source='technical'):
-        """Execute a trade based on the given direction and confidence"""
-        try:            # Calculate position size based on risk parameters and confidence
+        try:
+            # figure out position size based on risk/confidence
             position_size = calculate_position_size(
                 self.capital, 
                 self.risk_percent, 
@@ -257,7 +245,7 @@ class VolatilityBreakoutBot:
                 self.df['close'].iloc[-1]
             )
             
-            # Simulate order execution (in real implementation, this would place orders)
+            # Simulate order (would place real orders in production)
             current_price = self.df['close'].iloc[-1]
             trade_info = {
                 'symbol': self.symbol,
@@ -268,15 +256,15 @@ class VolatilityBreakoutBot:
                 'source': source
             }
             
-            # Add stop loss and take profit
+            # set SL/TP
             if direction == 'BUY':
-                trade_info['stop_loss'] = current_price * 0.97  # 3% stop loss
-                trade_info['take_profit'] = current_price * 1.06  # 6% take profit
-            else:  # SELL
-                trade_info['stop_loss'] = current_price * 1.03  # 3% stop loss 
-                trade_info['take_profit'] = current_price * 0.94  # 6% take profit
+                trade_info['stop_loss'] = current_price * 0.97
+                trade_info['take_profit'] = current_price * 1.06
+            else:
+                trade_info['stop_loss'] = current_price * 1.03
+                trade_info['take_profit'] = current_price * 0.94
             
-            # Store position
+            # store position
             position_id = f"{self.symbol}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
             self.positions[position_id] = trade_info
             
@@ -297,9 +285,7 @@ class VolatilityBreakoutBot:
             return False
     
     def analyze_market_with_llm(self, market_data):
-        """
-        Get LLM analysis of current market conditions
-        """
+        # send market snapshot to LLM for a second opinion
         prompt = f"""Analyze these market conditions and suggest trading strategy:
         
         {market_data}
@@ -313,7 +299,7 @@ class VolatilityBreakoutBot:
         return get_llm_response(prompt, self.llm_model)
     
     def run(self):
-        """Main bot execution loop"""
+        # main loop - runs until killed
         print(f"Starting VolatilityBreakoutBot for {self.symbol}")
         print(f"News-based strategy enabled: {self.use_news}")
         print(f"Earnings strategy enabled: {self.use_earnings}")

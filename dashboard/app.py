@@ -1,9 +1,9 @@
-import streamlit as st  # Streamlit's caching is available directly from the st module
+import streamlit as st
 
 # This MUST be the first Streamlit command in the app
 st.set_page_config(
     page_title="Trading Bot Dashboard",
-    page_icon="📈",
+    page_icon="",
     layout="wide"
 )
 
@@ -12,6 +12,7 @@ import pandas as pd
 import numpy as np
 import os
 import sys
+import logging
 from pathlib import Path
 import datetime
 
@@ -25,7 +26,6 @@ from dashboard.components.dashboard_ui import render_live_trading_tab, render_tr
 
 # Import utils
 from utils.websocket_manager import WebSocketManager
-from utils.binance_websocket import BinanceWebSocketManager
 
 # Import from config
 from config import API_KEY, API_SECRET, DEFAULT_SYMBOLS
@@ -45,20 +45,17 @@ binance_ws_manager = None
 
 def initialize_websocket(provider='alpaca'):
     """Initialize WebSocket manager for real-time data"""
-    global ws_manager, binance_ws_manager
+    global ws_manager
     
     if provider == 'alpaca':
         if ws_manager is None:
-            # Create a new instance if we don't have one yet
-            # Note: The WebSocketManager class has its own singleton management
             ws_manager = WebSocketManager(API_KEY, API_SECRET)
             ws_manager.start()
         return ws_manager
-    elif provider == 'binance':
-        if binance_ws_manager is None:
-            binance_ws_manager = BinanceWebSocketManager()
-            binance_ws_manager.start()
-        return binance_ws_manager
+    else:
+        logger = logging.getLogger('dashboard')
+        logger.warning("Only Alpaca WebSocket provider is supported; falling back to Alpaca")
+        return initialize_websocket('alpaca')
 
 def handle_real_time_update(data):
     """Handle real-time data updates from WebSocket"""
@@ -76,11 +73,9 @@ def handle_real_time_update(data):
                 if 'data' in st.session_state:
                     df = st.session_state.data
                     
-                    # Use the appropriate WebSocket manager based on provider
-                    if st.session_state.get('data_provider', 'alpaca') == 'alpaca' and ws_manager:
+                    # Use the Alpaca WebSocket manager
+                    if ws_manager:
                         st.session_state.data = ws_manager.add_to_dataframe(df, data)
-                    elif st.session_state.get('data_provider', 'alpaca') == 'binance' and binance_ws_manager:
-                        st.session_state.data = binance_ws_manager.add_to_dataframe(df, data)
                     
                     # Update signals after new data
                     if st.session_state.get('update_signals', True):
@@ -101,7 +96,7 @@ def fetch_cached_historical_data(symbol, interval, limit, provider):
 
 def main():
     """Main function to run the dashboard"""
-    # Initialize the database
+    # Set up the database
     ensure_db_exists()
     
     # Check authentication
@@ -149,7 +144,7 @@ def main():
             st.session_state.update_signals = auto_update_signals
         
         if st.sidebar.button("Refresh Data", key="sidebar_refresh_button") or (auto_refresh and "last_refresh" not in st.session_state):
-            # Initialize the appropriate WebSocket manager
+            # Set up the appropriate WebSocket manager
             ws = initialize_websocket(data_provider)
             
             st.session_state.data = fetch_historical_data(symbol, timeframe, limit=100, provider=data_provider)

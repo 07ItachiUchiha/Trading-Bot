@@ -6,12 +6,7 @@ import plotly.graph_objects as go
 from pathlib import Path
 
 def display_correlation_matrix(symbols=None):
-    """
-    Display correlation matrix between assets to avoid highly correlated trades
-    
-    Args:
-        symbols (list): List of symbols to analyze
-    """
+    """Show the correlation matrix heatmap and flag any risky overlaps."""
     st.subheader("Correlation Protection")
     
     if not symbols:

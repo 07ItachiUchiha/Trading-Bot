@@ -1,6 +1,5 @@
 """
-🔐 Enhanced Configuration Management
-Integrates secure configuration with the main trading bot application
+Config manager that wraps secure storage + environment variable fallbacks.
 """
 
 import os
@@ -17,9 +16,7 @@ from security.secure_config import SecureConfigManager, get_secure_config
 logger = logging.getLogger(__name__)
 
 class ConfigManager:
-    """
-    Unified configuration manager that integrates secure and standard config
-    """
+    """Pulls config from secure storage, env vars, or config.py as needed."""
     
     def __init__(self):
         self.secure_manager = SecureConfigManager()
@@ -27,7 +24,7 @@ class ConfigManager:
         self._load_config()
     
     def _load_config(self):
-        """Load configuration from secure storage with fallbacks"""
+        """Try secure storage first, then config.py, then env vars."""
         try:
             # Try to load from secure storage first
             secure_config = get_secure_config()
@@ -69,7 +66,7 @@ class ConfigManager:
             self._config_cache = self._get_default_config()
     
     def _get_default_config(self) -> Dict[str, Any]:
-        """Get default configuration with environment variable fallbacks"""
+        """Fallback config from env vars."""
         return {
             'api_keys': {
                 'alpaca_key': os.getenv('ALPACA_API_KEY', ''),
@@ -103,7 +100,7 @@ class ConfigManager:
         return self._config_cache.get('trading', {})
     
     def validate_configuration(self) -> Dict[str, Any]:
-        """Validate current configuration and return status"""
+        """Check that we have everything we need to run."""
         status = {
             'valid': True,
             'errors': [],
@@ -146,7 +143,7 @@ class ConfigManager:
         return status
     
     def migrate_to_secure_storage(self) -> bool:
-        """Migrate current configuration to secure storage"""
+        """Move current config into encrypted secure storage."""
         try:
             if not self._config_cache:
                 logger.error("No configuration to migrate")
@@ -179,7 +176,7 @@ class ConfigManager:
         self._load_config()
     
     def get_masked_config(self) -> Dict[str, Any]:
-        """Get configuration with sensitive data masked for display"""
+        """Return config with API keys partially masked for display."""
         if not self._config_cache:
             return {}
         
@@ -237,32 +234,32 @@ NEWS_WEIGHT = 0.5
 EARNINGS_WEIGHT = 0.6
 
 if __name__ == "__main__":
-    # Configuration validation and setup script
-    print("🔧 Trading Bot Configuration Manager")
+    # Configuration check
+    print("Trading Bot Configuration Manager")
     print("=" * 50)
     
     status = validate_config()
     
-    print(f"Configuration Status: {'✅ Valid' if status['valid'] else '❌ Invalid'}")
-    print(f"Secure Storage: {'✅ Enabled' if status['secure_storage'] else '❌ Disabled'}")
+    print(f"Configuration Status: {'Valid' if status['valid'] else 'Invalid'}")
+    print(f"Secure Storage: {'Enabled' if status['secure_storage'] else 'Disabled'}")
     
     if status['errors']:
-        print("\n❌ Errors:")
+        print("\nErrors:")
         for error in status['errors']:
             print(f"  - {error}")
     
     if status['warnings']:
-        print("\n⚠️ Warnings:")
+        print("\nWarnings:")
         for warning in status['warnings']:
             print(f"  - {warning}")
     
     if not status['secure_storage']:
-        print("\n🔐 To enable secure storage, run:")
+        print("\nTo enable secure storage, run:")
         print("python security/secure_config.py")
         
         migrate = input("\nMigrate current config to secure storage? (y/N): ")
         if migrate.lower() == 'y':
             if config_manager.migrate_to_secure_storage():
-                print("✅ Configuration migrated to secure storage")
+                print("Configuration migrated to secure storage")
             else:
-                print("❌ Migration failed")
+                print("Migration failed")

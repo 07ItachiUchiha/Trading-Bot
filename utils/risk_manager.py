@@ -4,38 +4,29 @@ from datetime import datetime, timedelta
 import logging
 
 class RiskManager:
-    """
-    Manages trading risk including position sizing, correlation risk, 
-    and overall portfolio risk.
-    """
+    """Handles position sizing, correlation checks, and portfolio-level risk limits."""
     
     def __init__(self, config=None):
-        """
-        Initialize the risk manager with configuration
-        
-        Args:
-            config (dict): Risk management configuration
-        """
-        # Default configuration
+        # defaults
         self.config = {
-            'max_daily_loss': 3.0,       # Maximum daily loss as % of portfolio
-            'max_trade_loss': 1.0,       # Maximum loss per trade as % of portfolio
-            'max_correlated_exposure': 15.0,  # Maximum exposure to correlated assets
-            'max_position_size': 0.1,    # Maximum position size as fraction of portfolio
+            'max_daily_loss': 3.0,
+            'max_trade_loss': 1.0,
+            'max_correlated_exposure': 15.0,
+            'max_position_size': 0.1,
             'sector_limits': {
-                'technology': 0.4,        # Max 40% in tech
-                'finance': 0.3,           # Max 30% in finance
-                'crypto': 0.2,            # Max 20% in crypto
-                'other': 0.5              # Max 50% in other sectors
+                'technology': 0.4,
+                'finance': 0.3,
+                'crypto': 0.2,
+                'other': 0.5
             },
-            'correlation_threshold': 0.7  # Threshold to consider assets correlated
+            'correlation_threshold': 0.7
         }
         
         # Update with provided configuration
         if config:
             self.config.update(config)
         
-        # Track portfolio stats
+        # portfolio tracking
         self.daily_pnl = 0
         self.positions = {}
         self.correlations = {}
@@ -46,7 +37,7 @@ class RiskManager:
             'other': 0
         }
         
-        # Define sector mappings
+        # sector mappings
         self.sector_map = {
             'AAPL': 'technology', 'MSFT': 'technology', 'GOOGL': 'technology',
             'AMZN': 'technology', 'META': 'technology', 'NFLX': 'technology',
@@ -54,24 +45,11 @@ class RiskManager:
             'BTCUSD': 'crypto', 'ETHUSD': 'crypto', 'LTCUSD': 'crypto'
         }
         
-        # Set up logging
         self.logger = logging.getLogger('RiskManager')
         
     def calculate_position_size(self, symbol, entry_price, stop_loss, confidence=0.7, account_value=None):
-        """
-        Calculate appropriate position size based on risk parameters
-        
-        Args:
-            symbol (str): Trading symbol
-            entry_price (float): Entry price
-            stop_loss (float): Stop loss price
-            confidence (float): Signal confidence
-            account_value (float): Account value (optional)
-            
-        Returns:
-            float: Position size as fraction of portfolio
-        """
-        # Fall back to default size if missing critical inputs
+        """Calculate position size based on stop distance and risk limits."""
+        # fallback if missing inputs
         if entry_price is None or stop_loss is None or entry_price == stop_loss:
             return self.config['max_position_size'] * confidence
         
@@ -86,10 +64,10 @@ class RiskManager:
         # Convert to position size as fraction of portfolio
         position_size = position_value / (account_value or 100000)
         
-        # Cap position size
+        # cap it
         position_size = min(position_size, self.config['max_position_size'])
         
-        # Apply sector limits
+        # sector limits
         sector = self.get_symbol_sector(symbol)
         current_sector_exposure = self.sector_exposure.get(sector, 0)
         sector_limit = self.config['sector_limits'].get(sector, 0.5)
@@ -104,16 +82,7 @@ class RiskManager:
         return position_size
     
     def adjust_for_correlation(self, symbol, position_size):
-        """
-        Adjust position size based on correlation with existing positions
-        
-        Args:
-            symbol (str): Trading symbol
-            position_size (float): Initial position size
-            
-        Returns:
-            float: Adjusted position size
-        """
+        """Reduce position size if too correlated with existing positions."""
         # If no correlation data or no positions, return original size
         if not self.correlations or not self.positions:
             return position_size
@@ -140,26 +109,11 @@ class RiskManager:
         return position_size
     
     def get_symbol_sector(self, symbol):
-        """
-        Get the sector for a symbol
-        
-        Args:
-            symbol (str): Trading symbol
-            
-        Returns:
-            str: Sector name
-        """
+        """Look up which sector a symbol belongs to."""
         return self.sector_map.get(symbol, 'other')
     
     def update_position(self, symbol, size, direction='long'):
-        """
-        Update position tracking
-        
-        Args:
-            symbol (str): Trading symbol
-            size (float): Position size
-            direction (str): 'long' or 'short'
-        """
+        """Track a new/updated position."""
         sector = self.get_symbol_sector(symbol)
         
         # Track position
@@ -176,12 +130,7 @@ class RiskManager:
         )
     
     def remove_position(self, symbol):
-        """
-        Remove position from tracking
-        
-        Args:
-            symbol (str): Trading symbol
-        """
+        """Remove a position from tracking."""
         if symbol in self.positions:
             sector = self.positions[symbol]['sector']
             size = self.positions[symbol]['size']
@@ -195,15 +144,7 @@ class RiskManager:
             del self.positions[symbol]
     
     def update_daily_pnl(self, pnl_change):
-        """
-        Update daily PnL tracking
-        
-        Args:
-            pnl_change (float): Change in PnL
-            
-        Returns:
-            bool: True if daily loss limit is exceeded
-        """
+        """Track daily PnL. Returns True if we've hit the loss limit."""
         self.daily_pnl += pnl_change
         
         # Check if daily loss limit is exceeded
@@ -218,12 +159,7 @@ class RiskManager:
         self.daily_pnl = 0
     
     def update_correlation_matrix(self, price_data):
-        """
-        Update correlation matrix based on price data
-        
-        Args:
-            price_data (dict): Dictionary of price DataFrames by symbol
-        """
+        """Recalculate correlation matrix from price data."""
         if not price_data:
             return
             

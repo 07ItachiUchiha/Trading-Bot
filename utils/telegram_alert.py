@@ -3,10 +3,6 @@ import os
 import logging
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger('telegram_alert')
 
 # Default values (should be overridden in config.py)
@@ -14,15 +10,7 @@ TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', '')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
 
 def send_alert(message):
-    """
-    Send alert message to Telegram
-    
-    Args:
-        message (str): The message to send
-        
-    Returns:
-        bool: True if successful, False otherwise
-    """
+    """Send a message to Telegram. Returns True on success."""
     try:
         # Check if token and chat_id are available
         if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:

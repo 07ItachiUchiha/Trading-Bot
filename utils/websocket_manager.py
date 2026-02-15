@@ -9,30 +9,20 @@ import pandas as pd
 from collections import deque
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
 logger = logging.getLogger('WebSocketManager')
 
 class WebSocketManager:
-    """
-    WebSocket Manager for handling real-time data connections
+    """Handles WebSocket connections with auto-reconnect and subscription management."""
     
-    This class manages a WebSocket connection, with automatic reconnection,
-    exponential backoff, and subscription management.
-    """
-    
-    # Class-level variables for singleton pattern
+    # singleton stuff
     _instances = {}
     _lock = threading.RLock()
-    _connection_times = deque(maxlen=10)  # Track recent connection attempts
+    _connection_times = deque(maxlen=10)
     
     @classmethod
     def get_instance(cls, api_key, api_secret, base_url="wss://stream.data.alpaca.markets/v2"):
-        """Get singleton instance - use this instead of constructor"""
-        # Use a key based on the API key and base URL to allow different instances for different accounts
+        """Singleton - use this instead of the constructor."""
+        # Use a key based on API key + URL so different accounts get their own instance
         key = f"{api_key[-4:]}:{base_url}"
         
         with cls._lock:
@@ -42,26 +32,24 @@ class WebSocketManager:
     
     @classmethod
     def _track_connection(cls):
-        """Track connection attempt for rate limiting"""
+        """Log connection attempt timestamp."""
         now = time.time()
         cls._connection_times.append(now)
     
     @classmethod
     def _should_rate_limit(cls):
-        """Check if we should rate limit connections"""
+        """Check if we're connecting too fast."""
         if len(cls._connection_times) < 2:
             return False
-            
+
         # If we have 5+ connections in 10 seconds, slow down
-        if len(cls._connection_times) >= 5:
-            time_span = time.time() - cls._connection_times[0]
-            if time_span < 10:
-                return True
-        
+        time_span = time.time() - cls._connection_times[0]
+        if len(cls._connection_times) >= 5 and time_span < 10:
+            return True
+
         return False
     
     def __init__(self, api_key, api_secret, base_url="wss://stream.data.alpaca.markets/v2"):
-        """Initialize the WebSocket manager with credentials"""
         self.api_key = api_key
         self.api_secret = api_secret
         self.base_url = base_url
@@ -72,7 +60,7 @@ class WebSocketManager:
         self.connected = False
         self._connection_attempt = 0  # Track connection attempts for this instance
         
-        # Reconnection parameters
+        # reconnection params
         self.reconnect_attempt = 0
         self.max_reconnect_attempts = 15
         self.base_delay = 5  # Initial delay in seconds
@@ -80,34 +68,34 @@ class WebSocketManager:
         self.last_connect_time = 0
         self.min_time_between_connects = 10  # Minimum time between connection attempts
         
-        # Heartbeat tracking
+        # heartbeat
         self.last_heartbeat = None
         self.heartbeat_interval = 30  # Seconds between heartbeats
         self.heartbeat_missed = 0
         self.max_missed_heartbeats = 3
         
-        # Message queue for when connection is lost
+        # queue messages when disconnected
         self.message_queue = []
         self.max_queue_size = 100
         
-        # Connection state tracking
+        # connection state
         self._connecting = False
         self._current_connection_id = 0
         self._should_reconnect = True
         self.last_error = None
         
-        # Network quality and failure tracking for adaptive reconnection
-        self.network_quality = "good"  # Assume good quality initially
+        # adaptive reconnection tracking
+        self.network_quality = "good"
         self.consecutive_failures = 0  # Track consecutive failure counts
         self.connection_history = []  # Track history of connection attempts
         
-        # Network condition tracking
-        self.min_backoff_delay = 1    # Minimum backoff delay in seconds
+        # network condition stuff
+        self.min_backoff_delay = 1
         self.max_backoff_delay = 300  # Maximum backoff delay (5 minutes)
         self.adaptive_factor = 1.0    # Will be adjusted based on network quality
 
     def start(self):
-        """Start the WebSocket connection in a separate thread"""
+        """Spin up the WS connection thread."""
         with self._lock:
             if self.running:
                 logger.info("WebSocketManager is already running")
@@ -129,7 +117,7 @@ class WebSocketManager:
                 logger.info("WebSocketManager thread already running")
     
     def _run_websocket(self):
-        """Internal method to establish and maintain the WebSocket connection"""
+        """Main loop that keeps the connection alive."""
         while self.running:
             try:
                 # Check if we're connecting too frequently
@@ -230,7 +218,7 @@ class WebSocketManager:
                 time.sleep(10)  # Wait before trying again
         
     def _monitor_heartbeat(self):
-        """Monitor heartbeats to ensure the connection is healthy"""
+        """Background thread - checks connection health via heartbeats."""
         while self.running:
             try:
                 if self.connected and self.last_heartbeat:
@@ -277,7 +265,7 @@ class WebSocketManager:
                 time.sleep(5)
 
     def _force_reconnect(self):
-        """Force a reconnection by closing the current socket"""
+        """Kill the current socket and let the main loop reconnect."""
         with self._lock:
             try:
                 self._current_connection_id += 1  # Invalidate current connection
@@ -296,12 +284,11 @@ class WebSocketManager:
                 self._connecting = False
 
     def _assess_network_quality(self):
-        """Assess network quality based on recent connection history"""
+        """Rate connection quality based on how often we disconnect."""
         # NEW METHOD to assess network quality
         if len(self._connection_times) < 2:
             return "unknown"
         
-        # Calculate time between disconnects
         time_diffs = []
         for i in range(1, len(self._connection_times)):
             time_diffs.append(self._connection_times[i] - self._connection_times[i-1])
@@ -311,8 +298,7 @@ class WebSocketManager:
         
         avg_time_between_disconnects = sum(time_diffs) / len(time_diffs)
         
-        # Classify network quality
-        if avg_time_between_disconnects > 300:  # More than 5 minutes between disconnects
+        if avg_time_between_disconnects > 300:
             return "good"
         elif avg_time_between_disconnects > 60:  # More than 1 minute
             return "fair"
@@ -320,7 +306,7 @@ class WebSocketManager:
             return "poor"
 
     def _on_open(self, ws):
-        """Callback when WebSocket connection is opened"""
+        """WS connected - authenticate and resubscribe."""
         logger.info(f"WebSocket connected (ID: {self._current_connection_id})")
         with self._lock:
             self.connected = True
@@ -336,18 +322,18 @@ class WebSocketManager:
             }
             ws.send(json.dumps(auth_data))
             
-            # Wait a moment before subscribing to avoid overwhelming the server
+            # brief pause before subscribing
             time.sleep(0.5)
             
-            # Re-subscribe to all symbols with rate limiting
+            # resubscribe to everything
             symbols = list(self.subscriptions.keys())
             for symbol in symbols:
                 if self.subscriptions[symbol]:
                     self._subscribe_to_symbol(symbol)
                     time.sleep(0.1)  # Small delay between subscriptions
 
-    def _on_message(self, ws, message):  # ws param is required by websocket-client library
-        """Callback when a message is received from the WebSocket"""
+    def _on_message(self, ws, message):
+        """Handle incoming WS messages."""
         try:
             # Update heartbeat time
             self.last_heartbeat = time.time()
@@ -367,7 +353,7 @@ class WebSocketManager:
             logger.error(f"Error processing WebSocket message: {e}")
 
     def _process_message(self, data):
-        """Process a single message/update from the WebSocket"""
+        """Route a single WS message to the right handler."""
         try:
             msg_type = data.get('T', data.get('type', 'unknown'))
             
@@ -390,9 +376,9 @@ class WebSocketManager:
             
             # Handle data updates
             elif msg_type in ['trade', 'quote', 'bar']:
-                symbol = data.get('S', data.get('symbol'))
+                symbol = data.get('S', data.get('symbol', None))
                 if symbol and symbol in self.subscriptions:
-                    # Convert the message to a standardized format for callbacks
+                    # Convert the message and fire callbacks
                     standardized_data = self._standardize_data(data, msg_type)
                     
                     # Call all registered callbacks for this symbol
@@ -414,10 +400,10 @@ class WebSocketManager:
             logger.error(f"Error processing message: {e}")
 
     def _standardize_data(self, data, msg_type):
-        """Standardize different data formats to a common structure"""
+        """Normalize different message formats into a common dict."""
         try:
             result = {
-                'raw': data,  # Keep the raw data for reference
+                'raw': data,
                 'type': msg_type,
                 'timestamp': datetime.now().isoformat(),
             }
@@ -426,7 +412,6 @@ class WebSocketManager:
             symbol = data.get('S', data.get('symbol', None))
             result['symbol'] = symbol
             
-            # Process based on message type
             if msg_type == 'trade':
                 result['price'] = float(data.get('p', data.get('price', 0)))
                 result['size'] = float(data.get('s', data.get('size', 0)))
@@ -450,7 +435,7 @@ class WebSocketManager:
                 result['time'] = data.get('t', data.get('timestamp', datetime.now().isoformat()))
                 result['is_closed'] = data.get('ic', data.get('is_closed', True))
                 
-            # Support XAU/USD specifically - make sure gold prices are handled properly
+            # gold prices need special handling
             if symbol and ('XAU' in symbol or 'GOLD' in symbol):
                 if 'price' in result and result['price'] == 0:
                     from dashboard.xau_handler import get_xau_usd_price
@@ -467,14 +452,14 @@ class WebSocketManager:
                 'error': str(e)
             }
 
-    def _on_error(self, ws, error):  # ws param is required by websocket-client library
-        """Callback when an error occurs in the WebSocket"""
+    def _on_error(self, ws, error):
+        """WS error callback."""
         logger.error(f"WebSocket error: {error}")
         
-        # Store the error for reference
+        # Store the error
         self.last_error = error
         
-        # Handle specific error types
+        # handle rate limits
         error_str = str(error).lower()
         if "429" in error_str or "too many requests" in error_str:
             # Rate limit hit - increase backoff significantly
@@ -484,8 +469,8 @@ class WebSocketManager:
             # Sleep thread to prevent immediate reconnection attempts
             time.sleep(30)
 
-    def _on_close(self, ws, close_status_code, close_msg):  # ws param is required by websocket-client library
-        """Callback when WebSocket connection is closed"""
+    def _on_close(self, ws, close_status_code, close_msg):
+        """WS closed."""
         logger.info(f"WebSocket closed: {close_status_code} - {close_msg}")
         self.connected = False
         
@@ -494,7 +479,7 @@ class WebSocketManager:
             return
 
     def subscribe(self, symbol, callback):
-        """Subscribe to updates for a specific symbol"""
+        """Subscribe to updates for a symbol."""
         with self._lock:
             # Add the callback to subscriptions
             if symbol not in self.subscriptions:
@@ -510,7 +495,7 @@ class WebSocketManager:
                 self._subscribe_to_symbol(symbol)
 
     def _subscribe_to_symbol(self, symbol):
-        """Send subscription message to the WebSocket"""
+        """Send the subscribe message over WS."""
         try:
             # For crypto
             if '/' in symbol:
@@ -534,7 +519,7 @@ class WebSocketManager:
             logger.error(f"Error subscribing to {symbol}: {e}")
 
     def unsubscribe(self, symbol, callback=None):
-        """Unsubscribe from updates for a specific symbol"""
+        """Unsubscribe from a symbol (or remove a specific callback)."""
         if symbol in self.subscriptions:
             if callback is None:
                 # Remove all callbacks for this symbol
@@ -553,7 +538,7 @@ class WebSocketManager:
                     self._unsubscribe_from_symbol(symbol)
 
     def _unsubscribe_from_symbol(self, symbol):
-        """Send unsubscribe message to the WebSocket"""
+        """Send unsubscribe message over WS."""
         try:
             # For crypto
             if '/' in symbol:
@@ -577,7 +562,7 @@ class WebSocketManager:
             logger.error(f"Error unsubscribing from {symbol}: {e}")
 
     def stop(self):
-        """Stop the WebSocket connection"""
+        """Shut everything down."""
         logger.info("Stopping WebSocketManager")
         self.running = False
     
@@ -595,7 +580,7 @@ class WebSocketManager:
         logger.info("WebSocketManager stopped")
 
     def add_to_dataframe(self, df, new_data):
-        """Add a new data point to an existing DataFrame"""
+        """Append or update the last row of a price dataframe with new WS data."""
         try:
             # If the data is for a closed candle, append it
             is_closed = new_data.get('is_closed', True)  # Default to True if not specified
@@ -642,7 +627,7 @@ class WebSocketManager:
             return df  # Return original dataframe on error
 
     def _get_backoff_multiplier(self):
-        """Get adaptive backoff multiplier based on network quality and history"""
+        """Scale reconnect delay based on network quality."""
         if self.network_quality == "good":
             return 0.5  # Faster reconnects for good networks
         elif self.network_quality == "poor":
@@ -658,15 +643,12 @@ class WebSocketManager:
 
 # Example usage
 if __name__ == "__main__":
-    # os is not directly used but often imported in main for environment setup
-    import os  # noqa
+    import os
     from config import API_KEY, API_SECRET
     
-    # Define a sample callback
     def handle_update(data):
         print(f"Received update: {data}")
     
-    # Create and start the WebSocketManager
     ws_manager = WebSocketManager(API_KEY, API_SECRET)
     ws_manager.start()
     

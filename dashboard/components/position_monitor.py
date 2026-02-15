@@ -123,7 +123,7 @@ class PositionMonitor:
                     self._close_position(pos_id, current_price, 'time_exit')
                     continue
             
-            # NEW: Check for max loss exit condition
+            # Check max loss exit
             if pos_data.get('use_max_loss_exit', False) and pos_data.get('max_loss_percent', 0) > 0:
                 entry_price = pos_data.get('entry_price', 0)
                 if entry_price > 0:
@@ -174,18 +174,12 @@ class PositionMonitor:
             print(f"Error closing position {position_id}: {e}")
     
     def _execute_exit_order(self, symbol, action, size, price, position_id, reason):
-        """Execute the exit order"""
-        # This would integrate with your trade execution component
-        # For now, we'll just log the order
+        """Send the exit order. Currently just logs it."""
         print(f"EXIT ORDER: {action} {size} {symbol} @ {price} - Reason: {reason}")
-        
-        # In a real implementation, you would call your order execution function
-        # and update position status based on the result
+        # TODO: wire this up to the actual order execution
     
     def _get_current_price(self, symbol):
-        """Get current price for a symbol"""
-        # This would integrate with your market data component
-        # For now, return mock prices
+        """Get the latest price. Falls back to mock data for now."""
         base_symbol = symbol.split('/')[0] if '/' in symbol else symbol[:3]
         
         price_map = {

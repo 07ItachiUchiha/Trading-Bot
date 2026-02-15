@@ -11,17 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from backtest.backtest_strategy import VolatilityBreakoutStrategy
 
 def run_backtest(datafile='BTCUSDT_1h.csv', start_cash=10000.0, commission=0.001):
-    """
-    Run a backtest of the volatility breakout strategy
-    
-    Parameters:
-    - datafile: CSV file with OHLCV data
-    - start_cash: Initial capital
-    - commission: Commission rate (e.g., 0.001 = 0.1%)
-    
-    Returns:
-    - Results dictionary with performance metrics
-    """
+    """Run the volatility breakout strategy against historical data and print stats."""
     # Initialize cerebro engine
     cerebro = bt.Cerebro()
     
@@ -116,17 +106,7 @@ def run_backtest(datafile='BTCUSDT_1h.csv', start_cash=10000.0, commission=0.001
     return results_dict
 
 def compare_parameters(params_list, datafile='BTCUSDT_1h.csv', start_cash=10000.0):
-    """
-    Run multiple backtests with different parameters for optimization
-    
-    Parameters:
-    - params_list: List of dictionaries with parameters to test
-    - datafile: CSV file with OHLCV data
-    - start_cash: Initial capital
-    
-    Returns:
-    - DataFrame with results for each parameter set
-    """
+    """Try a bunch of different param combos and rank by return."""
     results = []
     
     for i, params in enumerate(params_list):

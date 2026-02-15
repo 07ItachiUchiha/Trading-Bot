@@ -6,18 +6,7 @@ import json
 from pathlib import Path
 
 def calculate_position_size(account_balance, confidence_score, risk_percentage=1.0, max_alloc_percentage=5.0):
-    """
-    Calculate recommended position size based on confidence score
-    
-    Args:
-        account_balance (float): Current account balance
-        confidence_score (float): Signal confidence score (0-1)
-        risk_percentage (float): Maximum risk per trade as % of portfolio
-        max_alloc_percentage (float): Maximum allocation per trade
-    
-    Returns:
-        dict: Position size recommendations
-    """
+    """Figure out how much to allocate to a trade given the confidence level."""
     # Base allocation on confidence
     if confidence_score > 0.8:  # High confidence
         allocation_percentage = min(3.0 + (confidence_score - 0.8) * 10, max_alloc_percentage)
@@ -45,18 +34,7 @@ def calculate_position_size(account_balance, confidence_score, risk_percentage=1
     }
 
 def calculate_stop_loss(entry_price, asset_volatility, direction="buy", risk_tolerance="medium"):
-    """
-    Calculate stop loss price based on asset volatility
-    
-    Args:
-        entry_price (float): Entry price of the trade
-        asset_volatility (float): Asset volatility (daily standard deviation %)
-        direction (str): 'buy' or 'sell'
-        risk_tolerance (str): 'low', 'medium', or 'high'
-    
-    Returns:
-        float: Recommended stop loss price
-    """
+    """Calculate a stop loss level based on volatility and risk tolerance."""
     # Adjust stop distance based on risk tolerance
     if risk_tolerance == "low":
         multiplier = 1.5
@@ -77,34 +55,14 @@ def calculate_stop_loss(entry_price, asset_volatility, direction="buy", risk_tol
     return round(stop_price, 2)
 
 def calculate_trailing_stop(current_price, highest_price, direction="buy", trail_percentage=2.0):
-    """
-    Calculate trailing stop price
-    
-    Args:
-        current_price (float): Current market price
-        highest_price (float): Highest price since entry for buy, lowest for sell
-        direction (str): 'buy' or 'sell'
-        trail_percentage (float): Trailing stop percentage
-    
-    Returns:
-        float: Current trailing stop price
-    """
+    """Get the current trailing stop price."""
     if direction == "buy":
         return round(highest_price * (1 - trail_percentage / 100), 2)
     else:  # sell
         return round(highest_price * (1 + trail_percentage / 100), 2)
 
 def calculate_correlation_matrix(symbols, price_data):
-    """
-    Calculate correlation matrix between assets
-    
-    Args:
-        symbols (list): List of asset symbols
-        price_data (dict): Dictionary of price data for each symbol
-    
-    Returns:
-        pd.DataFrame: Correlation matrix
-    """
+    """Build a correlation matrix from price returns."""
     returns_data = {}
     
     # Calculate returns for each symbol
@@ -124,18 +82,7 @@ def calculate_correlation_matrix(symbols, price_data):
     return returns_df.corr()
 
 def should_avoid_correlated_trade(symbol, portfolio_symbols, correlation_matrix, threshold=0.7):
-    """
-    Check if a trade should be avoided due to high correlation
-    
-    Args:
-        symbol (str): Symbol to check
-        portfolio_symbols (list): Symbols already in portfolio
-        correlation_matrix (pd.DataFrame): Correlation matrix
-        threshold (float): Correlation threshold (0-1)
-        
-    Returns:
-        tuple: (bool, list) - (should_avoid, [correlated_symbols])
-    """
+    """Check if adding this symbol would create too much correlation in the portfolio."""
     if symbol not in correlation_matrix.columns or not portfolio_symbols:
         return False, []
     
@@ -150,17 +97,7 @@ def should_avoid_correlated_trade(symbol, portfolio_symbols, correlation_matrix,
     return len(correlated_symbols) > 0, correlated_symbols
 
 def get_asset_volatility(symbol, price_data, days=14):
-    """
-    Calculate asset volatility (standard deviation of returns)
-    
-    Args:
-        symbol (str): Asset symbol
-        price_data (dict): Price data dictionary
-        days (int): Number of days to calculate volatility
-        
-    Returns:
-        float: Volatility as a percentage
-    """
+    """Get recent volatility (daily std dev of returns) for a symbol."""
     if symbol not in price_data or len(price_data[symbol]) < days:
         # Default volatility estimates if data not available
         volatility_map = {
@@ -293,7 +230,7 @@ def display_risk_management_controls(symbol, account_balance=10000, confidence=0
                     help="Distance of trailing stop from highest price"
                 )
                 
-            # NEW: Maximum loss exit settings
+            # Max loss exit settings
             use_max_loss_exit = st.checkbox("Auto-Close on Loss", value=False,
                                          help="Automatically close position if loss reaches threshold")
             if use_max_loss_exit:
@@ -328,7 +265,7 @@ def display_risk_management_controls(symbol, account_balance=10000, confidence=0
         "trailing_stop_percentage": trail_percentage if 'trail_percentage' in locals() else 2.0,
         "use_time_exit": use_time_exit if 'use_time_exit' in locals() else False,
         "exit_hours": exit_hours if 'exit_hours' in locals() else 24,
-        # NEW: Include max loss exit settings
+        # Include max loss exit settings
         "use_max_loss_exit": use_max_loss_exit if 'use_max_loss_exit' in locals() else False,
         "max_loss_percent": max_loss_percent if 'max_loss_percent' in locals() else 5.0
     }

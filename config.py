@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env file if it exists
+# Load .env if present
 load_dotenv()
 
 # API keys
@@ -16,55 +16,55 @@ DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL', '')
 SLACK_WEBHOOK_URL = os.getenv('SLACK_WEBHOOK_URL', '')
 
 # Webhook secrets
-FINNHUB_WEBHOOK_SECRET = 'd0csqrpr01ql2j3fac90'
+FINNHUB_WEBHOOK_SECRET = os.getenv('FINNHUB_WEBHOOK_SECRET', '')
 
-# General trading configuration
-SYMBOL = 'BTCUSD'  # Default symbol for backward compatibility (Note: Alpaca uses BTCUSD instead of BTCUSDT)
-DEFAULT_SYMBOLS = ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XAU/USD']  # List of tradable symbols
-TIMEFRAME = '1H'    # Default timeframe (Note: Alpaca uses uppercase H instead of lowercase h)
-MARKET_TYPE = 'crypto' # crypto or stocks
+# Trading defaults
+SYMBOL = 'BTCUSD'  # Alpaca uses BTCUSD not BTCUSDT
+DEFAULT_SYMBOLS = ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XAU/USD']
+TIMEFRAME = '1H'    # uppercase H for Alpaca
+MARKET_TYPE = 'crypto'
 
-# Capital and risk management
-CAPITAL = float(os.getenv('CAPITAL', '10000'))  # Initial trading capital in USD
-RISK_PERCENT = float(os.getenv('RISK_PERCENT', '1.0'))  # Risk percentage per trade
-MAX_CAPITAL_PER_TRADE = float(os.getenv('MAX_CAPITAL_PER_TRADE', '0.1'))  # Maximum capital allocation per trade (10% of total capital)
+# Capital and risk
+CAPITAL = float(os.getenv('CAPITAL', '10000'))
+RISK_PERCENT = float(os.getenv('RISK_PERCENT', '1.0'))
+MAX_CAPITAL_PER_TRADE = float(os.getenv('MAX_CAPITAL_PER_TRADE', '0.1'))
 
 # Profit targets
-PROFIT_TARGET_PERCENT = float(os.getenv('PROFIT_TARGET_PERCENT', '15.0'))  # Overall profit target percentage
-DAILY_PROFIT_TARGET_PERCENT = float(os.getenv('DAILY_PROFIT_TARGET_PERCENT', '3.0'))  # Daily profit target percentage
+PROFIT_TARGET_PERCENT = float(os.getenv('PROFIT_TARGET_PERCENT', '15.0'))
+DAILY_PROFIT_TARGET_PERCENT = float(os.getenv('DAILY_PROFIT_TARGET_PERCENT', '3.0'))
 
-# Technical analysis parameters
+# TA params
 BOLLINGER_LENGTH = 20
 BOLLINGER_STD = 2.0
 RSI_LENGTH = 14
 RSI_OVERBOUGHT = 70
 RSI_OVERSOLD = 30
-EMA_SHORT = 50
+EMA_SHORT = 12
 EMA_LONG = 200
 ATR_LENGTH = 14
 
-# Stop loss and take profit settings
+# Stop loss / take profit
 STOP_LOSS_ATR_MULTIPLIER = 1.5
-TAKE_PROFIT_RR_RATIO = [1.5, 2.5, 4.0]  # Risk:Reward ratios for take profit levels
+TAKE_PROFIT_RR_RATIO = [1.5, 2.5, 4.0]
 
-# News sentiment parameters
-NEWS_WEIGHT = 0.5  # Weight for news sentiment signals
-SENTIMENT_REFRESH_INTERVAL = 1800  # Refresh sentiment every 30 minutes (in seconds)
-NEWS_LOOKBACK_DAYS = 2  # Number of days to look back for news
+# News / sentiment
+NEWS_WEIGHT = 0.5
+SENTIMENT_REFRESH_INTERVAL = 1800  # 30 min
+NEWS_LOOKBACK_DAYS = 2
 
-# Earnings report parameters
-EARNINGS_WEIGHT = 0.6  # Weight for earnings report signals
-PRE_EVENT_DAYS = 3  # Days before an economic event to consider
-POST_EVENT_DAYS = 1  # Days after an economic event to consider
+# Earnings
+EARNINGS_WEIGHT = 0.6
+PRE_EVENT_DAYS = 3
+POST_EVENT_DAYS = 1
 
-# Notification parameters
+# Notifications
 SEND_TELEGRAM_ALERTS = True
 SEND_DISCORD_ALERTS = False 
 SEND_SLACK_ALERTS = False
 ALERT_ON_SIGNALS = True
 ALERT_ON_TRADES = True
 
-# Watchlist categories
+# Watchlist
 WATCHLIST_CATEGORIES = {
     'crypto_major': 'Major Cryptocurrencies',
     'crypto_alts': 'Alternative Cryptocurrencies',
@@ -77,16 +77,17 @@ WATCHLIST_CATEGORIES = {
     'commodities': 'Commodities',
 }
 
-# Initialize directory structure
-# This can be used to create necessary directories for data storage
+# Directory setup
 EXPORTS_DIR = 'exports'
 DATA_DIR = 'data'
 LOGS_DIR = 'logs'
 
-# Ensure directories exist
+# Ensure dirs exist
 for directory in [EXPORTS_DIR, DATA_DIR, LOGS_DIR]:
     os.makedirs(directory, exist_ok=True)
 
 # LLM Configuration
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
 LLM_MODEL = os.getenv('LLM_MODEL', 'meta-llama/llama-4-maverick:free')  # Default model
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.0-flash')

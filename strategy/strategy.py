@@ -2,22 +2,10 @@ import pandas as pd
 import numpy as np
 import logging
 
-# Configure logging
 logger = logging.getLogger('strategy')
 
 def detect_consolidation(df, lookback_period=20, threshold=0.03):
-    """
-    Detect price consolidation periods
-    
-    Args:
-        df (pd.DataFrame): Price data with OHLC columns
-        lookback_period (int): Period for rolling calculations
-        threshold (float): Threshold for BB width to consider a period as consolidation
-        
-    Returns:
-        tuple: (consolidation, bb_width, atr) - boolean series for consolidation periods,
-               BB width values, and ATR values
-    """
+    """Find periods where price is ranging (low BB width = consolidation)."""
     try:
         # Create a copy to avoid SettingWithCopyWarning
         df = df.copy()
@@ -30,33 +18,31 @@ def detect_consolidation(df, lookback_period=20, threshold=0.03):
         rolling_mean = rolling_mean.fillna(method='bfill').fillna(method='ffill')
         rolling_std = rolling_std.fillna(method='bfill').fillna(method='ffill')
         
-        # Calculate Bollinger Bands width as a percentage of the middle band
-        # Add small constant to avoid division by zero
+        # bollinger band width as % of middle band
         epsilon = 1e-9
         bb_width = ((rolling_mean + 2 * rolling_std) - (rolling_mean - 2 * rolling_std)) / (rolling_mean + epsilon)
         
-        # Calculate Average True Range (ATR) for additional volatility measure
+        # ATR for volatility
         df['high_low'] = df['high'] - df['low']
         df['high_close'] = np.abs(df['high'] - df['close'].shift(1))
         df['low_close'] = np.abs(df['low'] - df['close'].shift(1))
         
-        # Fill NaN values from shift operation
+        # Fill NaN from shift
         df['high_close'] = df['high_close'].fillna(0)
         df['low_close'] = df['low_close'].fillna(0)
         
-        # Calculate True Range and ATR
+        # true range -> ATR
         df['tr'] = np.maximum.reduce([df['high_low'], df['high_close'], df['low_close']])
         atr = df['tr'].rolling(window=lookback_period).mean().fillna(0)
         
-        # Initialize consolidation series with all False values
+        # low BB width = consolidation
         consolidation = pd.Series(False, index=df.index)
         
         # Consider price in consolidation when BB width is below threshold
-        # Ensure we have valid data by checking for NaN and None values
         valid_index = (~pd.isna(bb_width)) & (bb_width < threshold)
         consolidation.loc[valid_index] = True
         
-        # Clean up any remaining NaN values
+        # cleanup NaN
         consolidation = consolidation.fillna(False)
         bb_width = bb_width.fillna(0)
         atr = atr.fillna(0)
@@ -70,18 +56,7 @@ def detect_consolidation(df, lookback_period=20, threshold=0.03):
         return default_values, default_values.astype(float), default_values.astype(float)
 
 def detect_breakout(df, consolidation, bb_width, lookback=20):
-    """
-    Detect breakouts from consolidation periods
-    
-    Args:
-        df (pd.DataFrame): Price data with OHLC columns
-        consolidation (pd.Series): Boolean series indicating consolidation periods
-        bb_width (pd.Series): Bollinger Band width values
-        lookback (int): Period for looking back for consolidation
-        
-    Returns:
-        tuple: (buy_signals, sell_signals) - Boolean series for buy and sell signals
-    """
+    """Look for breakouts from consolidation zones (volatility expansion after squeeze)."""
     try:
         # Validate inputs
         if df is None or consolidation is None or bb_width is None:
@@ -131,19 +106,7 @@ def detect_breakout(df, consolidation, bb_width, lookback=20):
         return empty_signals, empty_signals
 
 def calculate_targets_and_stop(entry_price, direction, atr_value, risk_reward_ratios=[1.5, 2.5, 4.0]):
-    """
-    Calculate stop loss and take profit targets based on ATR
-    
-    Args:
-        entry_price (float): Entry price
-        direction (str): 'long' or 'short'
-        atr_value (float): ATR value
-        risk_reward_ratios (list): List of risk-reward ratios for targets
-        
-    Returns:
-        tuple: (stop_loss, targets)
-    """
-    # Calculate stop distance (1 ATR)
+    """Get SL and TP levels based on ATR distance."""
     stop_distance = atr_value
     
     if direction == 'long':
@@ -156,28 +119,18 @@ def calculate_targets_and_stop(entry_price, direction, atr_value, risk_reward_ra
     return stop_loss, targets
 
 def check_entry(df):
-    """
-    Check for entry signals based on multiple technical indicators
-    
-    Args:
-        df (pd.DataFrame): Price data with technical indicators
-        
-    Returns:
-        tuple: (signal, confidence) where signal is 'BUY', 'SELL', or 'NEUTRAL'
-    """
+    """Score multiple indicators and return BUY/SELL/NEUTRAL with confidence."""
     signal = 'NEUTRAL'
     confidence = 0.0
     
-    # Get the last row for analysis
     current = df.iloc[-1]
     previous = df.iloc[-2]
     
-    # Initialize signal scoring
     buy_signals = 0
     sell_signals = 0
     total_signals = 0
     
-    # Check Bollinger Bands
+    # -- Bollinger Bands --
     if 'upper_band' in df.columns and 'lower_band' in df.columns:
         # Ensure values are not None
         if (current['upper_band'] is not None and current['lower_band'] is not None and
@@ -189,18 +142,17 @@ def check_entry(df):
                 sell_signals += 1
             total_signals += 1
     
-    # Check RSI
+    # -- RSI --
     if 'rsi' in df.columns and current['rsi'] is not None and previous['rsi'] is not None:
-        # RSI signals
-        if current['rsi'] < 30 and previous['rsi'] >= 30:  # Oversold
+        if current['rsi'] < 30 and previous['rsi'] >= 30:  # oversold
             buy_signals += 1
-        elif current['rsi'] > 70 and previous['rsi'] <= 70:  # Overbought
+        elif current['rsi'] > 70 and previous['rsi'] <= 70:  # overbought
             sell_signals += 1
         total_signals += 1
     
-    # Check moving averages
+    # -- Moving averages --
     if 'sma20' in df.columns and current['sma20'] is not None and previous['sma20'] is not None:
-        # Moving average crossovers
+        # SMA crossover
         if current['close'] > current['sma20'] and previous['close'] <= previous['sma20']:
             buy_signals += 1
         elif current['close'] < current['sma20'] and previous['close'] >= previous['sma20']:
@@ -208,7 +160,7 @@ def check_entry(df):
         
         # Check for ema indicators
         if 'ema50' in df.columns and 'ema200' in df.columns:
-            # Check trend direction
+            # longer term trend
             if (current['ema50'] is not None and current['ema200'] is not None):
                 if current['ema50'] > current['ema200']:
                     buy_signals += 0.5
@@ -217,9 +169,9 @@ def check_entry(df):
         
         total_signals += 1
     
-    # Check for consolidation breakouts if we have atr
+    # -- ATR breakout --
     if 'atr' in df.columns and current['atr'] is not None:
-        # Simple volatility breakout
+        # big move relative to ATR = breakout
         price_change = abs(current['close'] - previous['close'])
         if price_change > current['atr'] * 1.5:  # significant move
             if current['close'] > previous['close']:

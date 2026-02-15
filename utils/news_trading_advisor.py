@@ -5,13 +5,9 @@ import logging
 from utils.enhanced_sentiment import EnhancedSentimentAnalyzer
 
 class NewsTradingAdvisor:
-    """
-    Provides trading recommendations based on news sentiment 
-    and market analysis, without auto trading functionality
-    """
+    """Gives trade recommendations based on news sentiment without actually auto-trading."""
     
     def __init__(self, api_keys=None):
-        """Initialize the news trading advisor"""
         self.sentiment_analyzer = EnhancedSentimentAnalyzer(api_keys)
         self.logger = logging.getLogger('NewsTradingAdvisor')
         self.tracked_symbols = set()
@@ -45,7 +41,7 @@ class NewsTradingAdvisor:
         return self.analysis_cache[symbol]['data']
     
     def _generate_recommendation(self, symbol, sentiment_result):
-        """Generate a detailed trading recommendation based on sentiment analysis"""
+        """Turn sentiment results into an actionable recommendation."""
         signal = sentiment_result['signal']
         sentiment_score = sentiment_result['sentiment_score']
         confidence = sentiment_result['confidence']
@@ -76,13 +72,13 @@ class NewsTradingAdvisor:
             urgency = "Low"
             risk_level = "Low"
             
-        # Adjust risk level based on confidence
+        # Adjust risk based on how confident we are
         if confidence < 0.6:
             risk_level = "High"
         elif confidence > 0.8:
             risk_level = "Low"
             
-        # Calculate recommended position size
+        # Suggested position sizing
         if confidence > 0.8:
             position_size = "3-5% of portfolio"
         elif confidence > 0.65:
@@ -90,7 +86,7 @@ class NewsTradingAdvisor:
         else:
             position_size = "Up to 1% of portfolio"
             
-        # Custom recommendation text
+        # Build the recommendation text
         if action == "BUY":
             recommendation = f"Consider opening a {position_size} position in {symbol}. "
             recommendation += f"News sentiment is {sentiment_result['sentiment']} with {confidence*100:.1f}% confidence. "
@@ -128,14 +124,14 @@ class NewsTradingAdvisor:
         }
         
     def get_all_tracked_recommendations(self):
-        """Get recommendations for all tracked symbols"""
+        """Fetch recommendations for every symbol we're tracking."""
         results = {}
         for symbol in self.tracked_symbols:
             results[symbol] = self.get_recommendation(symbol)
         return results
     
     def process_news_update(self, news_data):
-        """Process news updates from webhooks or other sources"""
+        """Ingest news from webhooks and invalidate affected caches."""
         self.sentiment_analyzer.process_news_event(news_data)
         
         # Clear cache for affected symbols to force refresh

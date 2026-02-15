@@ -13,6 +13,34 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 # Database path
 DB_PATH = Path(__file__).parent.parent / "data" / "trading_bot.db"
 
+
+def _bootstrap_admin_if_configured(cursor):
+    """Create a bootstrap admin only when explicit env vars are provided."""
+    username = os.environ.get("TRADING_BOT_BOOTSTRAP_ADMIN_USERNAME", "").strip()
+    password = os.environ.get("TRADING_BOT_BOOTSTRAP_ADMIN_PASSWORD", "").strip()
+    email = os.environ.get("TRADING_BOT_BOOTSTRAP_ADMIN_EMAIL", "admin@localhost").strip()
+
+    cursor.execute("SELECT COUNT(*) FROM users")
+    user_count = cursor.fetchone()[0]
+    if user_count > 0:
+        return
+
+    if not username or not password:
+        print(
+            "No users exist yet. Set TRADING_BOT_BOOTSTRAP_ADMIN_USERNAME and "
+            "TRADING_BOT_BOOTSTRAP_ADMIN_PASSWORD to create the first admin account."
+        )
+        return
+
+    hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    cursor.execute(
+        """
+        INSERT INTO users (username, password, email, role)
+        VALUES (?, ?, ?, ?)
+        """,
+        (username, hashed_password, email, "admin"),
+    )
+
 def ensure_db_exists():
     """Create database and tables if they don't exist"""
     if not DB_PATH.parent.exists():
@@ -53,16 +81,7 @@ def ensure_db_exists():
     )
     ''')
     
-    # Create admin user if not exists
-    cursor.execute("SELECT * FROM users WHERE username='admin'")
-    if cursor.fetchone() is None:
-        hashed_password = bcrypt.hashpw("admin123".encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-        cursor.execute("""
-            INSERT INTO users (username, password, email, role) 
-            VALUES (?, ?, ?, ?)
-            """, 
-            ("admin", hashed_password, "admin@tradingbot.com", "admin")
-        )
+    _bootstrap_admin_if_configured(cursor)
     
     conn.commit()
     conn.close()
@@ -75,7 +94,7 @@ def get_db_connection():
     return conn
 
 def get_trades_from_db(symbol=None, status=None, limit=100):
-    """Get trades from the database with optional filtering and improved error handling"""
+    """Fetch trades with optional symbol/status filter."""
     conn = None
     try:
         conn = get_db_connection()
@@ -130,7 +149,7 @@ def get_trades_from_db(symbol=None, status=None, limit=100):
         ])
 
 def add_trade_to_db(trade_data):
-    """Add a trade to the database with improved error handling"""
+    """Insert a new trade record."""
     conn = None
     try:
         conn = get_db_connection()
@@ -188,7 +207,7 @@ def add_trade_to_db(trade_data):
         return False
 
 def update_trade_in_db(trade_id, update_data):
-    """Update an existing trade in the database with improved error handling"""
+    """Update fields on an existing trade."""
     conn = None
     try:
         conn = get_db_connection()
@@ -236,7 +255,7 @@ def update_trade_in_db(trade_id, update_data):
         return False
 
 def delete_trade_from_db(trade_id):
-    """Delete a trade from the database with improved error handling"""
+    """Remove a trade by ID."""
     conn = None
     try:
         conn = get_db_connection()
@@ -255,7 +274,7 @@ def delete_trade_from_db(trade_id):
         return False
 
 def get_user_from_db(username):
-    """Get user data from the database with improved error handling"""
+    """Look up a user by username."""
     conn = None
     try:
         conn = get_db_connection()
@@ -277,7 +296,7 @@ def get_user_from_db(username):
         return None
 
 def add_user_to_db(user_data):
-    """Add a new user to the database with improved error handling"""
+    """Create a new user record."""
     conn = None
     try:
         conn = get_db_connection()

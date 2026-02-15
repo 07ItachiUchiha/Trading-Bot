@@ -1,6 +1,5 @@
 """
-🔐 Security Enhancements for Trading Bot
-Implements secure configuration management and API key handling
+Secure config handling - encrypted storage for API keys and sensitive data.
 """
 
 import os
@@ -24,7 +23,7 @@ class SecureConfigManager:
         self.encrypted_config_file = self.config_dir / "config.encrypted"
         
     def _get_encryption_key(self) -> bytes:
-        """Get or create encryption key"""
+        """Load or generate the Fernet encryption key."""
         key_file = self.config_dir / "key.key"
         
         if key_file.exists():
@@ -40,7 +39,7 @@ class SecureConfigManager:
             return key
     
     def store_api_key(self, service: str, api_key: str, api_secret: str = None) -> bool:
-        """Store API key securely using system keyring"""
+        """Save an API key (and optionally secret) to the system keyring."""
         try:
             # Store API key
             keyring.set_password(self.app_name, f"{service}_api_key", api_key)
@@ -72,7 +71,7 @@ class SecureConfigManager:
             return None
     
     def store_encrypted_config(self, config_data: Dict) -> bool:
-        """Store configuration data encrypted"""
+        """Encrypt and write config data to disk."""
         try:
             key = self._get_encryption_key()
             fernet = Fernet(key)
@@ -95,7 +94,7 @@ class SecureConfigManager:
             return False
     
     def load_encrypted_config(self) -> Optional[Dict]:
-        """Load and decrypt configuration data"""
+        """Read and decrypt the config file."""
         try:
             if not self.encrypted_config_file.exists():
                 return None
@@ -115,16 +114,16 @@ class SecureConfigManager:
             return None
 
 class APIKeyValidator:
-    """Validate API keys and detect potentially compromised keys"""
+    """Basic format checks for API keys."""
     
     @staticmethod
     def validate_alpaca_key(api_key: str, api_secret: str) -> bool:
-        """Validate Alpaca API credentials format"""
+        """Quick sanity check on Alpaca key format."""
         # Alpaca keys have specific formats
         if not api_key or not api_secret:
             return False
         
-        # Check basic format (this is a simplified check)
+        # Basic format check
         if len(api_key) < 20 or len(api_secret) < 40:
             logger.warning("API key format appears invalid")
             return False
@@ -133,8 +132,8 @@ class APIKeyValidator:
     
     @staticmethod
     def check_key_exposure(api_key: str) -> bool:
-        """Check if API key might be exposed (basic heuristics)"""
-        # Check for common exposure patterns
+        """Heuristic check for demo/test keys."""
+        # Common exposure patterns
         exposure_indicators = [
             api_key in str(Path.cwd()),  # Key in current directory name
             "demo" in api_key.lower(),
@@ -149,7 +148,7 @@ class APIKeyValidator:
         return False
 
 class SecurityUtils:
-    """General security utilities"""
+    """Misc security helpers (hashing, masking, env checks)."""
     
     @staticmethod
     def hash_sensitive_data(data: str) -> str:
@@ -175,11 +174,11 @@ class SecurityUtils:
         return checks
 
 def setup_secure_config():
-    """Setup secure configuration for the trading bot"""
+    """One-time setup: encrypt and store API keys + trading config."""
     config_manager = SecureConfigManager()
     
     # Example usage - this would be called during initial setup
-    print("🔐 Setting up secure configuration...")
+    print("Setting up secure configuration...")
     
     # Store API keys securely
     alpaca_key = os.getenv('ALPACA_API_KEY')
@@ -188,9 +187,9 @@ def setup_secure_config():
     if alpaca_key and alpaca_secret:
         if APIKeyValidator.validate_alpaca_key(alpaca_key, alpaca_secret):
             config_manager.store_api_key('alpaca', alpaca_key, alpaca_secret)
-            print("✅ Alpaca credentials stored securely")
+            print("Alpaca credentials stored securely")
         else:
-            print("❌ Invalid Alpaca credentials format")
+            print("Invalid Alpaca credentials format")
     
     # Store other configuration
     trading_config = {
@@ -201,16 +200,16 @@ def setup_secure_config():
     }
     
     config_manager.store_encrypted_config(trading_config)
-    print("✅ Trading configuration stored securely")
+    print("Trading configuration stored securely")
 
 def get_secure_config() -> Dict:
-    """Get configuration from secure storage"""
+    """Load the full config from secure storage."""
     config_manager = SecureConfigManager()
     
     # Load encrypted config
     config = config_manager.load_encrypted_config() or {}
     
-    # Add API keys
+    # Add API keys from keyring
     config['api_keys'] = {
         'alpaca': {
             'key': config_manager.get_api_key('alpaca'),
@@ -229,7 +228,7 @@ if __name__ == "__main__":
     
     # Demo retrieval
     config = get_secure_config()
-    print("🔍 Configuration loaded:")
+    print("Configuration loaded:")
     for key, value in config.items():
         if 'api' in key.lower() or 'key' in key.lower():
             print(f"  {key}: {SecurityUtils.mask_api_key(str(value))}")

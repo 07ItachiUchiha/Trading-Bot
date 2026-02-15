@@ -7,17 +7,13 @@ import json
 from urllib.parse import quote
 
 class NewsFetcher:
-    """
-    A class to fetch financial news from multiple sources
-    """
+    """Fetches financial news from NewsAPI, Alpha Vantage, Finnhub, etc."""
     
     def __init__(self, api_key=None):
-        """Initialize with API credentials"""
-        # NewsAPI API key
         self.news_api_key = api_key
         self.alphavantage_key = None
         self.finnhub_key = None
-        self.cache_expiry = 30  # Cache expires after 30 minutes
+        self.cache_expiry = 30  # minutes
         self.cached_news = {}
         self.last_fetch_time = {}
 
@@ -31,32 +27,20 @@ class NewsFetcher:
             self.finnhub_key = finnhub_key
         
     def get_news_for_symbol(self, symbol, days=1, max_items=10, use_cache=True, analyze_sentiment=True):
-        """
-        Get recent news for a specific symbol from multiple sources
-        
-        Args:
-            symbol (str): Stock symbol (e.g., AAPL, BTCUSDT)
-            days (int): Number of days to look back
-            max_items (int): Maximum number of news items to return
-            use_cache (bool): Whether to use cached news if available
-            analyze_sentiment (bool): Whether to analyze sentiment of news articles
-            
-        Returns:
-            list: List of news items as dictionaries
-        """
-        # Clean up the symbol - remove USD/USDT for cryptocurrencies
+        """Fetch recent news for a symbol from all available sources."""
+        # strip USD/USDT suffix for search
         search_term = symbol
         if "USD" in symbol:
             search_term = symbol.split("USD")[0]
         
-        # Check if we have cached news and it's still valid
+        # check cache
         cache_key = f"{search_term}_{days}"
         if use_cache and cache_key in self.cached_news:
             cache_time = self.last_fetch_time.get(cache_key, 0)
             if time.time() - cache_time < 60 * self.cache_expiry:  # 30 minutes cache
                 return self.cached_news[cache_key]
         
-        # Collect news from all available sources
+        # grab from all sources
         all_news = []
         
         # Try NewsAPI first
@@ -88,7 +72,6 @@ class NewsFetcher:
         # Sort by date (newest first)
         all_news.sort(key=lambda x: x.get("publishedAt", ""), reverse=True)
         
-        # Analyze sentiment if requested
         if analyze_sentiment:
             all_news = self.analyze_sentiment(all_news)
         
@@ -231,16 +214,7 @@ class NewsFetcher:
             return []
     
     def _get_crypto_news(self, search_term, days=1):
-        """
-        Get cryptocurrency news from public sources like CryptoCompare
-        
-        Args:
-            search_term (str): Cryptocurrency symbol/name (e.g., BTC, ETH)
-            days (int): Number of days to look back
-            
-        Returns:
-            list: List of news items as dictionaries
-        """
+        """Pull crypto news from CryptoCompare's free API."""
         try:
             # Use CryptoCompare's free news API
             url = f"https://min-api.cryptocompare.com/data/v2/news/?categories={search_term.lower()},Blockchain&excludeCategories=Sponsored"
@@ -286,16 +260,7 @@ class NewsFetcher:
             return []
     
     def _get_from_yahoo_finance(self, symbol, days=1):
-        """
-        Get news from Yahoo Finance using web scraping
-        
-        Args:
-            symbol (str): Stock symbol (e.g., AAPL, MSFT)
-            days (int): Number of days to look back
-            
-        Returns:
-            list: List of news items as dictionaries
-        """
+        """Scrape news headlines from Yahoo Finance."""
         try:
             # We need BeautifulSoup for parsing HTML
             from bs4 import BeautifulSoup
@@ -303,7 +268,7 @@ class NewsFetcher:
             # Yahoo Finance URL for the symbol's news page
             url = f"https://finance.yahoo.com/quote/{symbol}/news"
             
-            # Set a user agent to mimic a browser request
+            # Set a user agent
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
             }
@@ -392,23 +357,13 @@ class NewsFetcher:
             return []
 
     def analyze_sentiment(self, news_items):
-        """
-        Analyze sentiment in news articles
-        
-        Args:
-            news_items (list): List of news item dictionaries
-            
-        Returns:
-            list: Same list with added sentiment scores
-        """
+        """Add sentiment scores to news items using VADER (falls back to keyword matching)."""
         # Try to use NLTK for sentiment analysis if available
         try:
             from nltk.sentiment.vader import SentimentIntensityAnalyzer
             
-            # Initialize the analyzer
             sia = SentimentIntensityAnalyzer()
             
-            # Analyze each news item
             for item in news_items:
                 # Skip if sentiment is already provided
                 if "sentiment" in item and item["sentiment"] != 0:
@@ -418,9 +373,9 @@ class NewsFetcher:
                 text = f"{item.get('title', '')} {item.get('description', '')}"
                 
                 # Perform sentiment analysis
+                text = f"{item.get('title', '')} {item.get('description', '')}"
                 sentiment = sia.polarity_scores(text)
                 
-                # Add compound sentiment score
                 item["sentiment"] = sentiment["compound"]
                 
                 # Add sentiment labels for easy filtering
@@ -434,8 +389,8 @@ class NewsFetcher:
             return news_items
             
         except ImportError:
-            # Fallback to simple keyword-based sentiment analysis
-            print("NLTK not available. Using simple keyword-based sentiment analysis.")
+            # fallback to simple keyword matching
+            print("NLTK not available, using keyword-based sentiment.")
             
             # Define positive and negative keywords
             positive_keywords = [
@@ -486,18 +441,7 @@ class NewsFetcher:
             return news_items
 
     def filter_news_by_sentiment(self, news_items, sentiment_filter="all", min_sentiment=None, max_sentiment=None):
-        """
-        Filter news based on sentiment
-        
-        Args:
-            news_items (list): List of news articles (usually from get_news_for_symbol)
-            sentiment_filter (str): Filter by sentiment label ('positive', 'negative', 'neutral', or 'all')
-            min_sentiment (float): Minimum sentiment score to include (scale -1 to 1)
-            max_sentiment (float): Maximum sentiment score to include (scale -1 to 1)
-            
-        Returns:
-            list: Filtered list of news items
-        """
+        """Filter news by sentiment label or score range."""
         # First ensure all items have sentiment scores
         news_items = self.analyze_sentiment(news_items)
         

@@ -1,7 +1,4 @@
-"""
-🧪 Comprehensive Test Suite for Trading Bot
-Tests critical functionality across all modules
-"""
+"""Test suite covering strategies, risk management, data, websockets, sentiment, etc."""
 
 import unittest
 import pandas as pd
@@ -11,6 +8,7 @@ import sys
 from pathlib import Path
 import tempfile
 import json
+import importlib.util
 from datetime import datetime, timedelta
 
 # Add parent directory to path
@@ -169,9 +167,11 @@ class TestDataManager(unittest.TestCase):
         except ImportError:
             self.skipTest("Data utils not available")
     
-    @patch('alpaca_trade_api.REST')
-    def test_market_data_fetching(self, mock_alpaca):
+    def test_market_data_fetching(self):
         """Test market data fetching with mocked API"""
+        if importlib.util.find_spec("alpaca_trade_api") is None:
+            self.skipTest("alpaca_trade_api not installed")
+
         try:
             from utils.market_data_manager import MarketDataManager
             
@@ -185,12 +185,14 @@ class TestDataManager(unittest.TestCase):
                 'volume': np.random.randint(1000, 10000, 10)
             })
             
-            mock_alpaca.return_value.get_crypto_bars.return_value.df = mock_bars
-            
-            # Create manager with required config
-            config = {'data_source': 'alpaca', 'default_timeframe': '1h'}
-            manager = MarketDataManager(config=config)
-            result = manager.get_historical_data('BTC/USD', '1h', 10)
+            with patch("utils.market_data_manager.tradeapi.REST") as mock_rest:
+                mock_rest.return_value.get_crypto_bars.return_value.df = mock_bars
+
+                # Create manager with required config
+                config = {'data_source': 'alpaca', 'default_timeframe': '1h'}
+                api_keys = {"alpaca_key": "k", "alpaca_secret": "s"}
+                manager = MarketDataManager(api_keys=api_keys, config=config)
+                result = manager.get_historical_data('BTC/USD', '1h', 10)
             
             self.assertIsInstance(result, pd.DataFrame)
             
@@ -337,7 +339,7 @@ class TestAPIIntegration(unittest.TestCase):
             self.skipTest("News fetcher not available")
 
 def run_comprehensive_tests():
-    """Run all tests and generate report"""
+    """Run everything and print a summary."""
     
     # Create test suite
     test_classes = [
@@ -369,22 +371,22 @@ def run_comprehensive_tests():
     passed = total_tests - failures - errors - skipped
     
     print("\n" + "="*60)
-    print("🧪 TEST SUITE RESULTS")
+    print("TEST RESULTS")
     print("="*60)
-    print(f"Total Tests: {total_tests}")
-    print(f"✅ Passed: {passed}")
-    print(f"❌ Failed: {failures}")
-    print(f"💥 Errors: {errors}")
-    print(f"⏭️  Skipped: {skipped}")
+    print(f"Total: {total_tests}")
+    print(f"Passed: {passed}")
+    print(f"Failed: {failures}")
+    print(f"Errors: {errors}")
+    print(f"Skipped: {skipped}")
     print(f"Success Rate: {(passed/total_tests)*100:.1f}%" if total_tests > 0 else "No tests run")
     
     if result.failures:
-        print("\n❌ FAILURES:")
+        print("\nFAILURES:")
         for test, traceback in result.failures:
             print(f"  - {test}: {traceback.split('AssertionError:')[-1].strip()}")
     
     if result.errors:
-        print("\n💥 ERRORS:")
+        print("\nERRORS:")
         for test, traceback in result.errors:
             print(f"  - {test}: {traceback.split('Exception:')[-1].strip()}")
     

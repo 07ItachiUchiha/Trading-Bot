@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 
 def load_account_data():
-    """Load account balance and transaction history with improved error handling"""
+    """Load account balance and transactions from disk."""
     try:
         account_file = Path(__file__).parent.parent.parent / "data" / "account.json"
         
@@ -166,7 +166,7 @@ def display_wallet():
             if currency == "USD":
                 price = 1.0
             else:
-                # In a real implementation, fetch current prices from API
+                # TODO: pull live prices from the API instead of hardcoding
                 price = 95000.0 if currency == "BTC" else 3500.0 if currency == "ETH" else 150.0
             
             asset_data.append({

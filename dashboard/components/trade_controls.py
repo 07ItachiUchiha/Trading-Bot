@@ -26,20 +26,7 @@ order_updates = {}
 trade_lock = threading.RLock()
 
 def execute_trade(symbol, action, quantity, price=None, order_type="market", risk_settings=None):
-    """
-    Execute a buy or sell trade with risk management
-    
-    Args:
-        symbol (str): Trading symbol (e.g., 'BTC/USD')
-        action (str): 'buy' or 'sell'
-        quantity (float): Trade quantity
-        price (float, optional): Limit price (for limit orders)
-        order_type (str): Type of order ('market', 'limit')
-        risk_settings (dict): Risk management settings
-    
-    Returns:
-        dict: Trade result with status and details
-    """
+    """Place a buy or sell order with risk management applied."""
     # Validate inputs
     if not symbol or not action or not quantity:
         return {
@@ -206,7 +193,7 @@ def _process_trade_simulation(order_id, symbol, action, quantity, price, order_t
             order_result["trailing_stop"] = risk_settings.get("use_trailing_stop")
             order_result["time_exit"] = risk_settings.get("use_time_exit")
             
-            # NEW: Add max loss exit settings
+            # max loss exit settings
             order_result["use_max_loss_exit"] = risk_settings.get("use_max_loss_exit")
             order_result["max_loss_percent"] = risk_settings.get("max_loss_percent")
             

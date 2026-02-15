@@ -4,37 +4,18 @@ from datetime import datetime
 import logging
 
 class SignalCombiner:
-    """
-    Combines technical and sentiment signals to produce more reliable trading signals
-    """
+    """Merges technical and sentiment signals into a single weighted signal."""
     
     def __init__(self, technical_weight=0.6, sentiment_weight=0.4):
-        """
-        Initialize signal combiner with configurable weights
-        
-        Args:
-            technical_weight (float): Weight for technical signals (0-1)
-            sentiment_weight (float): Weight for sentiment signals (0-1)
-        """
-        # Ensure weights sum to 1
+        # normalize weights to sum to 1
         total = technical_weight + sentiment_weight
         self.technical_weight = technical_weight / total
         self.sentiment_weight = sentiment_weight / total
         
-        # Initialize logger
         self.logger = logging.getLogger('SignalCombiner')
     
     def combine_signals(self, technical_signals, sentiment_signals):
-        """
-        Combine technical and sentiment signals
-        
-        Args:
-            technical_signals (dict): Dictionary of technical signals (-1 to 1 scale)
-            sentiment_signals (dict): Dictionary of sentiment signals (-1 to 1 scale)
-        
-        Returns:
-            dict: Combined signals with confidence scores
-        """
+        """Weighted combination of technical + sentiment signals per symbol."""
         combined_signals = {}
         
         # Process each symbol
@@ -69,7 +50,7 @@ class SignalCombiner:
             tech_conf = technical_signals[symbol].get('confidence', 0.6)
             sent_conf = sentiment_signals[symbol].get('confidence', 0.5)
             
-            # Higher confidence when signals agree, lower when they conflict
+            # confidence boost when signals agree, penalty when they don't
             if tech_signal == sent_signal:
                 combined_conf = (tech_conf * self.technical_weight + sent_conf * self.sentiment_weight) * 1.2
             else:
@@ -91,7 +72,7 @@ class SignalCombiner:
         return combined_signals
     
     def _signal_to_value(self, signal, strength):
-        """Convert signal string and strength to numeric value (-1 to 1)"""
+        """'buy'/'sell'/etc -> numeric value between -1 and 1."""
         if isinstance(signal, (int, float)):
             return signal  # Already numeric
             
@@ -108,7 +89,7 @@ class SignalCombiner:
         return base_value * min(1.0, max(0.1, strength))
     
     def _value_to_signal(self, value):
-        """Convert numeric value to signal string and strength"""
+        """Numeric value -> signal string + strength."""
         abs_value = abs(value)
         strength = min(1.0, abs_value * 1.5)  # Scale up strength for better readability
         
@@ -124,18 +105,8 @@ class SignalCombiner:
             return 'hold', abs_value
 
 def get_combined_signals(symbol, technical_data=None, sentiment_data=None):
-    """
-    Helper function to get combined signals for the UI
-    
-    Args:
-        symbol (str): Trading symbol
-        technical_data (dict): Technical signals dict
-        sentiment_data (dict): Sentiment signals dict
-    
-    Returns:
-        dict: Combined signals with metadata
-    """
-    # Create default data if not provided (for demo purposes)
+    """Convenience function for the UI - combines signals for one symbol."""
+    # fallback demo data if nothing is provided
     if technical_data is None:
         technical_data = {
             symbol: {
@@ -151,7 +122,7 @@ def get_combined_signals(symbol, technical_data=None, sentiment_data=None):
         }
     
     if sentiment_data is None:
-        # Base sentiment on time of day for demo variation
+        # varies by time of day for demo
         hour = datetime.now().hour
         if hour < 12:
             sentiment = 'positive'

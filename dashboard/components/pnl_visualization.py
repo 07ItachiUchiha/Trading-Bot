@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 
 def load_trade_history(filepath=None):
-    """Load trade history from file with improved error handling"""
+    """Load trade data from a JSON file, or generate sample data if none given."""
     try:
         if not filepath:
             # Use sample data if no file is provided
@@ -113,7 +113,7 @@ def generate_sample_trade_data():
     return df
 
 def plot_pnl_chart(trade_data, aggregate_by_day=False):
-    """Create a PnL chart with error handling for infinite values"""
+    """Build the PnL chart, handling edge cases like inf values."""
     # Convert to DataFrame if it's not already
     df = pd.DataFrame(trade_data)
     
@@ -264,7 +264,7 @@ def plot_pnl_chart(trade_data, aggregate_by_day=False):
     return fig
 
 def display_pnl_chart(trades_df=None):
-    """Display PnL visualization in Streamlit with improved error handling"""
+    """Render the PnL chart in the Streamlit UI."""
     st.header("📈 PnL Performance")
     
     with st.expander("PnL Chart Options", expanded=True):

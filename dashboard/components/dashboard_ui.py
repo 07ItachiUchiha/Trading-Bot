@@ -229,16 +229,15 @@ def render_live_trading_tab(data, signals=None):
                 return
                 
             try:
-                # Format the entry time as a string to avoid datetime serialization issues
                 current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
                 trade_data = {
                     'symbol': st.session_state.get('symbol', 'UNKNOWN'),
                     'direction': direction,
-                    'entry_price': float(entry_price),  # Ensure proper type
-                    'stop_loss': float(stop_price),     # Ensure proper type
-                    'targets': [float(target1), float(target2), float(target3)],  # Ensure proper type
-                    'size': float(position_size),       # Ensure proper type
+                    'entry_price': float(entry_price),
+                    'stop_loss': float(stop_price),
+                    'targets': [float(target1), float(target2), float(target3)],
+                    'size': float(position_size),
                     'entry_time': current_time,
                     'status': 'open'
                 }

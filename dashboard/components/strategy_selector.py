@@ -17,16 +17,7 @@ from dashboard.components.trading import (
 )
 
 def display_strategy_selector(data, key_prefix=""):
-    """
-    Display strategy selector dropdown and strategy information
-    
-    Args:
-        data (pd.DataFrame): Price data with OHLC columns
-        key_prefix (str): Optional prefix for Streamlit widget keys
-        
-    Returns:
-        tuple: (selected_strategy_name, signals, live_execution)
-    """
+    """Show the strategy picker dropdown and run the selected strategy."""
     st.subheader("📊 Strategy Selection")
     
     # Ensure this list matches exactly with the options in settings
@@ -95,15 +86,7 @@ def display_strategy_selector(data, key_prefix=""):
     return selected_strategy, signals, live_execution
 
 def get_strategy_explanation(strategy_name):
-    """
-    Get explanation text for the given strategy
-    
-    Args:
-        strategy_name (str): Name of the strategy
-        
-    Returns:
-        str: Markdown formatted explanation
-    """
+    """Return a markdown blurb explaining how the strategy works."""
     explanations = {
         "Combined Strategy": """
         ## Combined Strategy
@@ -285,14 +268,7 @@ def apply_strategy(data, strategy_name):
     return signals
 
 def display_strategy_performance(strategy_name, data, signals):
-    """
-    Display performance metrics for the selected strategy
-    
-    Args:
-        strategy_name (str): Name of the selected strategy
-        data (pd.DataFrame): Price data
-        signals (dict): Trading signals
-    """
+    """Show performance stats for the selected strategy."""
     if data is None or signals is None or len(data) < 20:
         st.warning("Insufficient data to analyze strategy performance")
         return

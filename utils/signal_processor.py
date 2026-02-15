@@ -5,22 +5,18 @@ import logging
 import os
 
 class SignalProcessor:
-    """
-    Processes and combines trading signals from different sources,
-    applying weights and confidence scores.
-    """
+    """Combines technical, sentiment, and earnings signals into one decision."""
     
     def __init__(self, config=None):
-        """Initialize the signal processor with configuration"""
-        # Default configuration
+        # default config
         self.config = {
-            'min_confidence': 0.7,        # Minimum confidence threshold for signals
-            'signal_aging_hours': 2,      # How long a signal remains valid
-            'multi_signal_boost': 0.1,    # Confidence boost for confirmations
+            'min_confidence': 0.7,
+            'signal_aging_hours': 2,
+            'multi_signal_boost': 0.1,
             'signal_weights': {
-                'technical': 0.5,         # Weight for technical signals
-                'sentiment': 0.3,         # Weight for sentiment signals
-                'earnings': 0.2           # Weight for earnings signals
+                'technical': 0.5,
+                'sentiment': 0.3,
+                'earnings': 0.2
             }
         }
         
@@ -28,15 +24,14 @@ class SignalProcessor:
         if config:
             self.config.update(config)
         
-        # Signal tracking
+        # signal tracking
         self.active_signals = {}
         
-        # Set up logging
         self.logger = logging.getLogger('SignalProcessor')
     
     def process_signals(self, symbol, technical_signal=None, sentiment_signal=None, 
                        earnings_signal=None, price_data=None):
-        """Process and combine signals from different sources"""
+        """Merge all signal sources into a single buy/sell/neutral with confidence."""
         # Start with neutral signal
         combined_signal = {
             'symbol': symbol,
@@ -86,7 +81,7 @@ class SignalProcessor:
                 f"({earnings_signal.get('reasoning', 'earnings analysis')})"
             )
         
-        # If no signals received, return neutral
+        # If no signals, nothing to do
         if not signals_received:
             return combined_signal
         
@@ -94,7 +89,7 @@ class SignalProcessor:
         buy_weight = sum(w * c for s, w, c in zip(signals_received, signal_weights, signal_confidences) if s == 'buy')
         sell_weight = sum(w * c for s, w, c in zip(signals_received, signal_weights, signal_confidences) if s == 'sell')
         
-        # Normalize to get final confidence
+        # normalize
         total_weight = sum(signal_weights)
         if total_weight > 0:
             if buy_weight > sell_weight:
@@ -107,7 +102,7 @@ class SignalProcessor:
                 combined_signal['signal'] = 'neutral'
                 combined_signal['confidence'] = 0.0
         
-        # Apply multi-signal boost if signals confirm each other
+        # boost if multiple signals agree
         buy_count = sum(1 for s in signals_received if s == 'buy')
         sell_count = sum(1 for s in signals_received if s == 'sell')
         
@@ -124,18 +119,18 @@ class SignalProcessor:
         # Format reasoning
         combined_signal['reasoning'] = "; ".join(combined_signal['reasoning'])
         
-        # Track the signal
+        # track it
         self.active_signals[symbol] = combined_signal
         
         return combined_signal
     
     def get_all_active_signals(self):
-        """Get all active signals"""
+        """Return all non-expired signals."""
         self.cleanup_expired_signals()
         return self.active_signals
     
     def cleanup_expired_signals(self):
-        """Remove expired signals from tracking"""
+        """Drop signals older than the aging threshold."""
         removed = 0
         current_time = datetime.now()
         symbols_to_remove = []

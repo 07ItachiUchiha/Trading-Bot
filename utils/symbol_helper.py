@@ -1,18 +1,9 @@
 """
-Utility functions to standardize symbol handling across the trading bot
+Helpers for converting between different symbol formats (Alpaca, Binance, etc)
 """
 
 def standardize_symbol(symbol, destination='alpaca'):
-    """
-    Standardize symbol formatting based on destination system
-    
-    Args:
-        symbol (str): The symbol to format
-        destination (str): The destination system ('alpaca', 'binance', etc)
-    
-    Returns:
-        str: Properly formatted symbol for the destination
-    """
+    """Convert a symbol to the right format for the given platform."""
     
     # Remove any whitespace
     symbol = symbol.strip()

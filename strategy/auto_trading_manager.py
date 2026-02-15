@@ -1,601 +1,759 @@
-import pandas as pd
-import numpy as np
-import time
-from datetime import datetime, timedelta
-import json
 import logging
 import os
-import threading
+import time
 import traceback
-import alpaca_trade_api as tradeapi
-import requests
+from datetime import datetime, timedelta
 
-# Ensure numpy.NaN is available
-if not hasattr(np, 'NaN'):
-    np.NaN = np.nan
+import numpy as np
+import pandas as pd
 
-from strategy.strategy import check_entry
-from strategy.news_strategy import NewsBasedStrategy
 from strategy.earnings_report_strategy import EarningsReportStrategy
-from utils.risk_management import calculate_position_size, manage_open_position
+from strategy.news_strategy import NewsBasedStrategy
+from strategy.strategy import check_entry
 from utils.telegram_alert import send_alert
-from utils.news_fetcher import NewsFetcher
-from config import (API_KEY, API_SECRET, CAPITAL, RISK_PERCENT, MAX_CAPITAL_PER_TRADE, 
-                   DEFAULT_SYMBOLS, PROFIT_TARGET_PERCENT, DAILY_PROFIT_TARGET_PERCENT,
-                   SENTIMENT_REFRESH_INTERVAL)
+from prediction.engine import PredictionEngine
+from prediction.schema import Prediction
+from config import (
+    API_KEY,
+    API_SECRET,
+    DAILY_PROFIT_TARGET_PERCENT,
+    DEFAULT_SYMBOLS,
+    PROFIT_TARGET_PERCENT,
+    RISK_PERCENT,
+    SENTIMENT_REFRESH_INTERVAL,
+)
+
+try:
+    import alpaca_trade_api as tradeapi
+except ImportError:
+    tradeapi = None
+
 
 class AutoTradingManager:
-    """Manager for automated trading across multiple symbols"""
-    
-    def __init__(self, symbols, timeframe, capital=10000, risk_percent=1.0, profit_target_percent=3.0, 
-                 daily_profit_target=5.0, use_news=True, news_weight=0.5, use_earnings=True, 
-                 earnings_weight=0.6):
-        """Initialize the AutoTradingManager"""
-        self.logger = logging.getLogger('auto_trading_manager')
-        
-        # Format symbols correctly
-        self.symbols = []
-        for symbol in symbols:
-            # For Alpaca, use "BTC/USD" format for crypto
-            if '/' not in symbol and symbol.endswith('USD'):
-                formatted_symbol = f"{symbol[:-3]}/USD"
-                self.symbols.append(formatted_symbol)
-            else:
-                self.symbols.append(symbol)
-        
-        # Set up API with more robust error handling
-        try:
-            # Try paper trading URL first
-            self.api = tradeapi.REST(API_KEY, API_SECRET, base_url='https://paper-api.alpaca.markets')
-            try:
-                # Validate API key with a simple account query
-                self.api.get_account()
-                self.logger.info("Successfully connected to Alpaca API")
-                self.using_binance = False
-            except Exception as e:
-                self.logger.error(f"Failed to connect to Alpaca API: {e}")
-                # Try the live API URL if paper trading fails
-                try:
-                    self.api = tradeapi.REST(API_KEY, API_SECRET, base_url='https://api.alpaca.markets')
-                    self.api.get_account()
-                    self.logger.info("Successfully connected to Alpaca Live API")
-                    self.using_binance = False
-                except:
-                    # Try to use Binance if Alpaca fails
-                    try:
-                        from binance.client import Client
-                        self.binance_client = Client()
-                        self.logger.info("Using Binance as fallback for data")
-                        self.using_binance = True
-                    except:
-                        self.logger.warning("Unable to connect to Binance either")
-                        self.using_binance = False
-        except Exception as e:
-            self.logger.error(f"Error initializing trading API: {e}")
-            self.using_binance = False
-        
-        self.timeframe = timeframe
-        self.capital = capital
-        self.risk_percent = risk_percent
-        self.profit_target_percent = profit_target_percent
-        self.daily_profit_target = daily_profit_target
-        
-        # Strategy weights
-        self.use_news = use_news
-        self.news_weight = news_weight
-        self.use_earnings = use_earnings
-        self.earnings_weight = earnings_weight
-        
-        # Trading state
+    """Manager for automated trading across multiple symbols."""
+
+    def __init__(
+        self,
+        symbols,
+        timeframe,
+        capital=10000,
+        risk_percent=1.0,
+        profit_target_percent=3.0,
+        daily_profit_target=5.0,
+        use_news=True,
+        news_weight=0.5,
+        use_earnings=True,
+        earnings_weight=0.6,
+        signal_only=True,
+    ):
+        self.logger = logging.getLogger("auto_trading_manager")
+        self.setup_logging()
+
+        self.symbols = [self._normalize_symbol(s) for s in (symbols or DEFAULT_SYMBOLS)]
+        self.timeframe = self._normalize_timeframe(timeframe)
+        self.capital = float(capital)
+        self.risk_percent = float(risk_percent if risk_percent is not None else RISK_PERCENT)
+        self.profit_target_percent = float(
+            profit_target_percent
+            if profit_target_percent is not None
+            else PROFIT_TARGET_PERCENT
+        )
+        self.daily_profit_target = float(
+            daily_profit_target
+            if daily_profit_target is not None
+            else DAILY_PROFIT_TARGET_PERCENT
+        )
+
+        self.use_news = bool(use_news)
+        self.news_weight = float(news_weight)
+        self.use_earnings = bool(use_earnings)
+        self.earnings_weight = float(earnings_weight)
+        self.signal_only = bool(signal_only)
+
         self.running = False
         self.dataframes = {}
         self.active_trades = {}
-        self.daily_pnl = 0
-        self.total_pnl = 0
+        self.daily_pnl = 0.0
+        self.total_pnl = 0.0
         self.last_signal = {}
         self.symbols_trading_halted = {}
-        
-        # Initialize API client using config values
-        self.client = tradeapi.REST(API_KEY, API_SECRET, base_url='https://paper-api.alpaca.markets')
-        
-        # Setup logging
-        self.setup_logging()
-        
-        # Initialize strategies
-        self.news_strategy = NewsBasedStrategy() if use_news else None
-        self.earnings_strategy = EarningsReportStrategy() if use_earnings else None
-        
-        self.logger.info(f"Auto trading manager initialized with {len(self.symbols)} symbols")
-    
+
+        self.sentiment_signals = {}
+        self.earnings_signals = {}
+        self.last_sentiment_refresh = {}
+        self.pending_event_symbols = set()
+
+        self.news_strategy = NewsBasedStrategy() if self.use_news else None
+        self.earnings_strategy = EarningsReportStrategy() if self.use_earnings else None
+
+        # Prediction engine for structured, explainable predictions
+        self.prediction_engine = PredictionEngine(config={
+            "signal_weights": {
+                "technical": max(0.0, 1.0 - self.news_weight - self.earnings_weight),
+                "sentiment": self.news_weight if self.use_news else 0.0,
+                "earnings": self.earnings_weight if self.use_earnings else 0.0,
+                "llm": 0.1,
+            }
+        })
+        self.latest_predictions = {}  # symbol -> Prediction
+
+        self.api = None
+        self.client = None
+        self._init_alpaca_client()
+
+        self.logger.info(
+            "Auto trading manager initialized | symbols=%s timeframe=%s signal_only=%s",
+            self.symbols,
+            self.timeframe,
+            self.signal_only,
+        )
+
     def setup_logging(self):
-        """Setup the logger"""
-        self.logger = logging.getLogger("auto_trading_manager")
+        """Setup logger handlers once."""
         self.logger.setLevel(logging.INFO)
-        
-        # Create directory for logs if it doesn't exist
+        if self.logger.handlers:
+            return
+
         os.makedirs("logs", exist_ok=True)
-        
-        # File handler
-        file_handler = logging.FileHandler(f"logs/auto_trading_{datetime.now().strftime('%Y%m%d')}.log")
+        formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+        file_handler = logging.FileHandler(
+            f"logs/auto_trading_{datetime.now().strftime('%Y%m%d')}.log"
+        )
         file_handler.setLevel(logging.INFO)
-        
-        # Console handler
+        file_handler.setFormatter(formatter)
+
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.INFO)
-        
-        # Create formatter and add to handlers
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        file_handler.setFormatter(formatter)
         console_handler.setFormatter(formatter)
-        
-        # Add handlers to logger
+
         self.logger.addHandler(file_handler)
         self.logger.addHandler(console_handler)
-    
+
+    def _init_alpaca_client(self):
+        """Initialize Alpaca REST client if dependency and keys are available."""
+        if tradeapi is None:
+            self.logger.warning("alpaca_trade_api not installed; running with synthetic/mock data")
+            return
+
+        if not API_KEY or not API_SECRET:
+            self.logger.warning("Alpaca API credentials missing; running with synthetic/mock data")
+            return
+
+        base_urls = [
+            "https://paper-api.alpaca.markets",
+            "https://api.alpaca.markets",
+        ]
+
+        for base_url in base_urls:
+            try:
+                candidate = tradeapi.REST(API_KEY, API_SECRET, base_url=base_url)
+                candidate.get_account()
+                self.api = candidate
+                self.client = candidate
+                self.logger.info("Connected to Alpaca API (%s)", base_url)
+                return
+            except Exception as exc:
+                self.logger.warning("Failed Alpaca connection (%s): %s", base_url, exc)
+
+        self.logger.warning("All Alpaca connection attempts failed; using synthetic/mock data")
+
+    def _normalize_symbol(self, symbol):
+        symbol = str(symbol).strip().upper()
+        if "/" in symbol:
+            return symbol
+        if symbol.endswith("USD") and len(symbol) > 3:
+            return f"{symbol[:-3]}/USD"
+        return symbol
+
+    def _normalize_timeframe(self, timeframe):
+        tf = str(timeframe).strip()
+        mapping = {
+            "1m": "1Min",
+            "3m": "3Min",
+            "5m": "5Min",
+            "15m": "15Min",
+            "30m": "30Min",
+            "1h": "1Hour",
+            "2h": "2Hour",
+            "4h": "4Hour",
+            "6h": "6Hour",
+            "12h": "12Hour",
+            "1d": "1Day",
+            "1min": "1Min",
+            "3min": "3Min",
+            "5min": "5Min",
+            "15min": "15Min",
+            "30min": "30Min",
+            "1hour": "1Hour",
+            "2hour": "2Hour",
+            "4hour": "4Hour",
+            "6hour": "6Hour",
+            "12hour": "12Hour",
+            "1day": "1Day",
+        }
+        return mapping.get(tf.lower(), tf)
+
     def run(self):
-        """Run the auto trading manager"""
+        """Run the auto trading manager in an infinite loop."""
         self.running = True
         self.logger.info("Starting auto trading manager")
-        
-        # Load initial historical data
+
         for symbol in self.symbols:
             self._load_historical_data(symbol)
-        
-        # Main loop
+
         while self.running:
             try:
-                for symbol in self.symbols:
-                    if self.symbols_trading_halted.get(symbol, False):
-                        self.logger.warning(f"Trading for {symbol} is halted, skipping")
-                        continue
-                    
-                    # Update candles
-                    self._update_candles(symbol)
-                    
-                    # Calculate indicators
-                    self._calculate_indicators(symbol)
-                    
-                    # Update sentiment if applicable
-                    if self.use_news:
-                        self._update_sentiment(symbol)
-                    
-                    # Process earnings signals if applicable
-                    if self.use_earnings:
-                        self._process_earnings_signals(symbol)
-                    
-                    # Generate trading signals
-                    self._analyze_symbol(symbol)
-                
-                # Sleep for 1 minute before next check
-                time.sleep(60)
-                
-            except Exception as e:
-                self.logger.error(f"Error in auto trading manager: {e}")
+                self.run_cycle()
+            except Exception as exc:
+                self.logger.error("Error in auto trading cycle: %s", exc)
                 traceback.print_exc()
-                time.sleep(60)  # Wait before trying again
-        
+
+            if self.running:
+                time.sleep(60)
+
         self.logger.info("Auto trading manager stopped")
-    
+
+    def run_cycle(self):
+        """Process one deterministic trading cycle for all symbols."""
+        cycle_results = {}
+
+        for symbol in self.symbols:
+            if self.symbols_trading_halted.get(symbol, False):
+                self.logger.warning("Trading for %s is halted, skipping", symbol)
+                continue
+
+            try:
+                updated = self._update_candles(symbol)
+                if not updated:
+                    self.logger.warning("Could not update candles for %s", symbol)
+                    continue
+
+                self._calculate_indicators(symbol)
+
+                if self.use_news:
+                    self._update_sentiment(symbol)
+                if self.use_earnings:
+                    self._process_earnings_signals(symbol)
+
+                cycle_results[symbol] = self._analyze_symbol(symbol)
+            except Exception as exc:
+                self.logger.error("Cycle error for %s: %s", symbol, exc)
+                traceback.print_exc()
+
+        return cycle_results
+
     def stop(self):
-        """Stop the auto trading manager"""
+        """Stop the auto trading manager."""
         self.running = False
         self.logger.info("Stopping auto trading manager")
-    
-    def _convert_timeframe(self, timeframe):
-        """Convert user-friendly timeframe to Alpaca format"""
-        # Already mapped in start_auto_trader function
-        return timeframe
-    
-    def _load_historical_data(self, symbol):
-        """Load historical data for a specific symbol with improved error handling"""
-        try:
-            # Format symbol for API (remove slash)
-            api_symbol = symbol.replace('/', '')
-            
-            self.logger.info(f"Requesting historical data for {symbol} with {self.timeframe}")
-            
-            # Calculate date range for historical data
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=7)  # 1 week of data
-            
-            # Format dates
-            start_str = start_date.strftime('%Y-%m-%d')
-            end_str = end_date.strftime('%Y-%m-%d')
-            
-            try:
-                # Attempt to get data from API
-                # Example URL for crypto: https://data.alpaca.markets/v1beta3/crypto/us/bars
-                url = f"{self.api_base_url}/v1beta3/crypto/us/bars"
-                headers = {
-                    'APCA-API-KEY-ID': self.api_key,
-                    'APCA-API-SECRET-KEY': self.api_secret
-                }
-                params = {
-                    'timeframe': self.timeframe,
-                    'start': start_str,
-                    'end': end_str,
-                    'symbols': symbol
-                }
-                
-                response = requests.get(url, headers=headers, params=params)
-                
-                # Check for errors
-                if response.status_code == 200:
-                    data = response.json()
-                    bars = self._process_api_response(data, symbol)
-                    
-                    if bars is not None and not bars.empty:
-                        self.symbol_data[api_symbol] = bars
-                        self.logger.info(f"Successfully loaded {len(bars)} candles for {symbol}")
-                        return True
-                    else:
-                        self.logger.warning(f"No data returned for {symbol}")
-                else:
-                    self.logger.error(f"Error loading historical data for {api_symbol}: {response.status_code} - {response.text}")
-                    
-            except Exception as e:
-                self.logger.error(f"Error loading historical data for {symbol}: {e}")
-            
-            # If we get here, there was an error - use mock data
-            mock_data = self._generate_mock_data(symbol)
-            if mock_data is not None:
-                self.symbol_data[api_symbol] = mock_data
-                self.logger.info(f"Using mock data for {symbol} ({len(mock_data)} candles)")
-                return True
-                
-            # If all else fails, halt trading for this symbol
-            self.symbols_trading_halted[api_symbol] = True
-            return False
-                
-        except Exception as e:
-            self.logger.error(f"Unexpected error loading data for {symbol}: {e}")
-            self.symbols_trading_halted[symbol.replace('/', '')] = True
-            return False
-        
-    def _generate_mock_data(self, symbol):
-        """Generate mock price data for testing when API fails"""
-        try:
-            # Current time
-            end_date = datetime.now()
-            
-            # Calculate start date (7 days ago)
-            start_date = end_date - timedelta(days=7)
-            
-            # Number of candles to generate
-            num_candles = 168  # 24 hours * 7 days = 168 hourly candles
-            
-            # Generate dates
-            dates = pd.date_range(start=start_date, end=end_date, periods=num_candles)
-            
-            # Base price based on symbol
-            if 'BTC' in symbol:
-                base_price = 65000  # BTC base price
-            elif 'ETH' in symbol:
-                base_price = 3500   # ETH base price
-            elif 'BNB' in symbol:
-                base_price = 600    # BNB base price
-            elif 'SOL' in symbol:
-                base_price = 150    # SOL base price
-            elif 'ADA' in symbol:
-                base_price = 0.5    # ADA base price
-            elif 'DOGE' in symbol:
-                base_price = 0.15   # DOGE base price
-            else:
-                base_price = 100    # Default price
-            
-            # Generate price with some randomness
-            np.random.seed(42)  # For reproducibility
-            price_changes = np.random.normal(0, base_price * 0.01, num_candles)  # 1% standard deviation
-            prices = base_price + np.cumsum(price_changes)
-            prices = np.maximum(prices, base_price * 0.5)  # Ensure prices don't go too low
-            
-            # Create DataFrame
-            mock_data = pd.DataFrame({
-                'timestamp': dates,
-                'open': prices * (1 - 0.005 * np.random.random(num_candles)),
-                'high': prices * (1 + 0.01 * np.random.random(num_candles)),
-                'low': prices * (1 - 0.01 * np.random.random(num_candles)),
-                'close': prices,
-                'volume': np.random.randint(100, 10000, num_candles)
-            })
-            
-            self.logger.info(f"Generated mock data for {symbol}: {len(mock_data)} bars")
-            
-            # Calculate some basic indicators
-            self._calculate_indicators_for_data(mock_data)
-            
-            # Unhalt trading for this symbol since we have mock data
-            self.symbols_trading_halted[symbol.replace('/', '')] = False
-            
-            return mock_data
-            
-        except Exception as e:
-            self.logger.error(f"Error generating mock data for {symbol}: {e}")
+
+    def _fetch_alpaca_crypto_bars(self, symbol, days_back=7):
+        """Fetch crypto bars from Alpaca and return a normalized dataframe."""
+        if self.client is None:
             return None
 
-    def _calculate_indicators_for_data(self, df):
-        """Calculate technical indicators for the given DataFrame"""
+        api_symbol = symbol.replace("/", "")
+        end = datetime.now()
+        start = end - timedelta(days=days_back)
+
+        bars = self.client.get_crypto_bars(
+            api_symbol,
+            self.timeframe,
+            start=start.strftime("%Y-%m-%d"),
+            end=end.strftime("%Y-%m-%d"),
+        ).df
+
+        if bars is None or bars.empty:
+            return None
+
+        if isinstance(bars.index, pd.MultiIndex):
+            bars = bars.reset_index()
+        elif bars.index.name:
+            bars = bars.reset_index()
+
+        ts_col = "timestamp" if "timestamp" in bars.columns else bars.columns[0]
+        normalized = pd.DataFrame(
+            {
+                "timestamp": pd.to_datetime(bars[ts_col]),
+                "open": bars["open"].astype(float),
+                "high": bars["high"].astype(float),
+                "low": bars["low"].astype(float),
+                "close": bars["close"].astype(float),
+                "volume": bars["volume"].astype(float),
+            }
+        )
+        normalized = normalized.set_index("timestamp").sort_index()
+        return normalized
+
+    def _load_historical_data(self, symbol):
+        """Load historical data for a symbol and populate self.dataframes."""
         try:
-            # Simple Moving Averages
-            df['sma20'] = df['close'].rolling(window=20).mean()
-            df['sma50'] = df['close'].rolling(window=50).mean()
-            
-            # RSI
-            delta = df['close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-            rs = gain / loss
-            df['rsi'] = 100 - (100 / (1 + rs))
-            
-            # Bollinger Bands
-            df['bb_middle'] = df['close'].rolling(window=20).mean()
-            df['bb_std'] = df['close'].rolling(window=20).std()
-            df['bb_upper'] = df['bb_middle'] + 2 * df['bb_std']
-            df['bb_lower'] = df['bb_middle'] - 2 * df['bb_std']
-            
-            return df
-        except Exception as e:
-            self.logger.error(f"Error calculating indicators: {e}")
-            return df
+            df = self._fetch_alpaca_crypto_bars(symbol, days_back=7)
+            if df is None or df.empty:
+                df = self._generate_mock_data(symbol)
+
+            if df is None or df.empty:
+                self.symbols_trading_halted[symbol] = True
+                self.logger.error("Failed to load any data for %s; halting symbol", symbol)
+                return False
+
+            self.dataframes[symbol] = df
+            self.symbols_trading_halted[symbol] = False
+            return True
+        except Exception as exc:
+            self.logger.error("Error loading historical data for %s: %s", symbol, exc)
+            self.symbols_trading_halted[symbol] = True
+            return False
+
+    def _generate_mock_data(self, symbol):
+        """Generate mock price data for testing when API fails."""
+        try:
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=7)
+            num_candles = 168
+            dates = pd.date_range(start=start_date, end=end_date, periods=num_candles)
+
+            if "BTC" in symbol:
+                base_price = 65000
+            elif "ETH" in symbol:
+                base_price = 3500
+            elif "BNB" in symbol:
+                base_price = 600
+            elif "SOL" in symbol:
+                base_price = 150
+            elif "ADA" in symbol:
+                base_price = 0.5
+            elif "DOGE" in symbol:
+                base_price = 0.15
+            elif "XAU" in symbol or "GOLD" in symbol:
+                base_price = 2400
+            else:
+                base_price = 100
+
+            np.random.seed(42)
+            price_changes = np.random.normal(0, base_price * 0.01, num_candles)
+            prices = base_price + np.cumsum(price_changes)
+            prices = np.maximum(prices, base_price * 0.5)
+
+            mock_data = pd.DataFrame(
+                {
+                    "timestamp": dates,
+                    "open": prices * (1 - 0.005 * np.random.random(num_candles)),
+                    "high": prices * (1 + 0.01 * np.random.random(num_candles)),
+                    "low": prices * (1 - 0.01 * np.random.random(num_candles)),
+                    "close": prices,
+                    "volume": np.random.randint(100, 10000, num_candles),
+                }
+            )
+            mock_data = mock_data.set_index("timestamp")
+            return mock_data
+        except Exception as exc:
+            self.logger.error("Error generating mock data for %s: %s", symbol, exc)
+            return None
 
     def _update_candles(self, symbol):
-        """Update candle data for a specific symbol"""
+        """Update candle data for a specific symbol."""
+        if symbol not in self.dataframes or self.dataframes[symbol] is None:
+            return self._load_historical_data(symbol)
+
         try:
-            if symbol not in self.dataframes:
-                return self._load_historical_data(symbol)
-            
-            # Get the latest candle from Alpaca
-            end = datetime.now()
-            start = end - timedelta(minutes=60)  # Get the most recent hour
-            
-            latest_bars = self.client.get_crypto_bars(
-                symbol=symbol,
-                timeframe=self.timeframe,
-                start=start.strftime('%Y-%m-%d'),
-                end=end.strftime('%Y-%m-%d')
-            ).df
-            
-            if len(latest_bars) > 0:
-                # Convert to expected format
-                latest_df = pd.DataFrame({
-                    'open': latest_bars['open'],
-                    'high': latest_bars['high'],
-                    'low': latest_bars['low'],
-                    'close': latest_bars['close'],
-                    'volume': latest_bars['volume']
-                })
-                latest_df.index.name = 'timestamp'
-                
-                # Merge with existing dataframe
-                if self.dataframes[symbol] is not None:
-                    # Remove old data to keep dataframe size manageable
-                    if len(self.dataframes[symbol]) > 1000:
-                        self.dataframes[symbol] = self.dataframes[symbol].iloc[-500:]
-                    
-                    # Append new data
-                    self.dataframes[symbol] = pd.concat([self.dataframes[symbol], latest_df])
-                    self.dataframes[symbol] = self.dataframes[symbol][~self.dataframes[symbol].index.duplicated(keep='last')]
-                else:
-                    self.dataframes[symbol] = latest_df
-            
+            latest_df = self._fetch_alpaca_crypto_bars(symbol, days_back=1)
+            if latest_df is None or latest_df.empty:
+                return True
+
+            merged = pd.concat([self.dataframes[symbol], latest_df])
+            merged = merged[~merged.index.duplicated(keep="last")].sort_index()
+            if len(merged) > 1500:
+                merged = merged.iloc[-1000:]
+            self.dataframes[symbol] = merged
             return True
-        except Exception as e:
-            self.logger.error(f"Error updating candles for {symbol}: {e}")
+        except Exception as exc:
+            self.logger.error("Error updating candles for %s: %s", symbol, exc)
             return False
-    
+
     def _calculate_indicators(self, symbol):
-        """Calculate technical indicators for a given symbol"""
-        # Implementation depends on what indicators you want to use
-        # This is a simplified version
+        """Calculate technical indicators for a symbol."""
         df = self.dataframes.get(symbol)
-        if df is None or len(df) < 20:
+        if df is None or len(df) < 30:
             return
-        
-        # Calculate basic indicators
-        df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()
-        df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
-        df['ema200'] = df['close'].ewm(span=200, adjust=False).mean()
-        
-        # Calculate RSI
-        delta = df['close'].diff()
+
+        close = df["close"]
+        high = df["high"]
+        low = df["low"]
+
+        df["sma20"] = close.rolling(window=20).mean()
+        df["ema20"] = close.ewm(span=20, adjust=False).mean()
+        df["ema50"] = close.ewm(span=50, adjust=False).mean()
+        df["ema200"] = close.ewm(span=200, adjust=False).mean()
+
+        delta = close.diff()
         gain = delta.where(delta > 0, 0)
         loss = -delta.where(delta < 0, 0)
         avg_gain = gain.rolling(window=14).mean()
         avg_loss = loss.rolling(window=14).mean()
-        rs = avg_gain / avg_loss
-        df['rsi'] = 100 - (100 / (1 + rs))
-        
-        # Calculate Bollinger Bands
-        df['middle_band'] = df['close'].rolling(window=20).mean()
-        df['std'] = df['close'].rolling(window=20).std()
-        df['upper_band'] = df['middle_band'] + (df['std'] * 2)
-        df['lower_band'] = df['middle_band'] - (df['std'] * 2)
-        
+        rs = avg_gain / avg_loss.replace(0, np.nan)
+        df["rsi"] = 100 - (100 / (1 + rs))
+
+        middle_band = close.rolling(window=20).mean()
+        std = close.rolling(window=20).std()
+        df["middle_band"] = middle_band
+        df["upper_band"] = middle_band + (std * 2)
+        df["lower_band"] = middle_band - (std * 2)
+
+        prev_close = close.shift(1)
+        tr1 = high - low
+        tr2 = (high - prev_close).abs()
+        tr3 = (low - prev_close).abs()
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        df["atr"] = tr.rolling(window=14).mean()
+
         self.dataframes[symbol] = df
 
-    def get_historical_data(self, symbol, timeframe, days_back=30):
-        """Get historical price data with retry and error handling"""
-        self.logger.info(f"Requesting historical data for {symbol} with {timeframe}")
-        
-        # Try multiple times with exponential backoff
-        max_retries = 3
-        retry_delay = 2  # seconds
-        
-        for attempt in range(max_retries):
-            try:
-                if hasattr(self, 'using_binance') and self.using_binance:
-                    # Use Binance for data
-                    return self._get_binance_data(symbol, timeframe, days_back)
-                
-                # Calculate date range
-                end_date = datetime.now()
-                start_date = end_date - timedelta(days=days_back)
-                
-                # Format dates for API request
-                start_str = start_date.strftime('%Y-%m-%d')
-                end_str = end_date.strftime('%Y-%m-%d')
-                
-                # Ensure symbol is formatted correctly for API request
-                api_symbol = symbol.replace('/', '')
-                
-                # Get historical data from Alpaca
-                bars = self.api.get_crypto_bars(
-                    api_symbol, 
-                    timeframe,
-                    start=start_str,
-                    end=end_str
-                ).df
-                
-                if bars.empty:
-                    self.logger.warning(f"No data returned for {symbol}")
-                    return None
-                    
-                # Format the dataframe for our use
-                bars = bars.reset_index()
-                bars = bars.rename(columns={
-                    'timestamp': 'time',
-                    'open': 'open',
-                    'high': 'high',
-                    'low': 'low', 
-                    'close': 'close',
-                    'volume': 'volume'
-                })
-                return bars
-                
-            except Exception as e:
-                self.logger.error(f"Error loading historical data for {symbol.replace('/', '')}: {e}")
-                if attempt < max_retries - 1:
-                    wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
-                    self.logger.info(f"Retrying in {wait_time} seconds...")
-                    time.sleep(wait_time)
-                else:
-                    # Generate synthetic data as last resort
-                    self.logger.info(f"Using synthetic data for {symbol}")
-                    return self._generate_synthetic_data(symbol)
-        
-        return None
+    def _update_sentiment(self, symbol):
+        """Refresh sentiment signal for a symbol with safe neutral fallback."""
+        if not self.news_strategy:
+            return {"signal": "neutral", "confidence": 0.0, "reasoning": "news disabled"}
 
-    def _generate_synthetic_data(self, symbol):
-        """Generate synthetic data when API fails"""
-        self.logger.info(f"Generating synthetic price data for {symbol}")
-        
-        # Create a date range for the last 30 days
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=30)
-        dates = pd.date_range(start=start_date, end=end_date, freq='1H')
-        
-        # Base price depends on the symbol
-        if 'BTC' in symbol:
-            base_price = 30000
-        elif 'ETH' in symbol:
-            base_price = 2000
-        elif 'BNB' in symbol:
-            base_price = 500
-        elif 'ADA' in symbol:
-            base_price = 0.6
-        elif 'SOL' in symbol:
-            base_price = 140
-        elif 'DOGE' in symbol:
-            base_price = 0.15
-        else:
-            base_price = 100
-        
-        # Generate realistic price data
-        close_prices = [base_price]
-        for i in range(1, len(dates)):
-            # Add some randomness, momentum, and mean reversion
-            momentum = 0.2
-            mean_reversion = 0.1
-            volatility = base_price * 0.01
-            
-            price_change = np.random.normal(0, volatility)
-            if i > 1:
-                prev_change = close_prices[-1] - close_prices[-2]
-                price_change += momentum * prev_change
-            price_change -= mean_reversion * (close_prices[-1] - base_price)
-            
-            close_prices.append(close_prices[-1] + price_change)
-        
-        # Create dataframe with OHLC data
-        df = pd.DataFrame({
-            'time': dates,
-            'close': close_prices
-        })
-        
-        # Generate open/high/low from close
-        df['open'] = df['close'].shift(1)
-        df.loc[0, 'open'] = df.loc[0, 'close'] * (1 + np.random.uniform(-0.005, 0.005))
-        
-        df['high'] = df.apply(
-            lambda x: max(x['open'], x['close']) * (1 + abs(np.random.normal(0, 0.005))), 
-            axis=1
-        )
-        
-        df['low'] = df.apply(
-            lambda x: min(x['open'], x['close']) * (1 - abs(np.random.normal(0, 0.005))),
-            axis=1
-        )
-        
-        df['volume'] = np.random.normal(base_price * 100, base_price * 20, len(df))
-        df['volume'] = df['volume'].astype(int).clip(lower=1)
-        
-        return df
+        now = time.time()
+        last_refresh = self.last_sentiment_refresh.get(symbol, 0)
+        event_forced = symbol in self.pending_event_symbols
+        stale = now - last_refresh >= SENTIMENT_REFRESH_INTERVAL
 
-    def _get_binance_data(self, symbol, timeframe, days_back):
-        """Get historical data from Binance"""
+        if symbol in self.sentiment_signals and not stale and not event_forced:
+            return self.sentiment_signals[symbol]
+
         try:
-            # Map timeframe to Binance format
-            tf_map = {
-                '1Min': '1m',
-                '5Min': '5m',
-                '15Min': '15m',
-                '1Hour': '1h',
-                '4Hour': '4h',
-                '1Day': '1d'
+            signal = self.news_strategy.generate_signal(symbol.replace("/", ""))
+            normalized = {
+                "signal": str(signal.get("signal", "neutral")).lower(),
+                "confidence": float(signal.get("confidence", 0.0)),
+                "reasoning": signal.get("reasoning", "news sentiment"),
+                "raw": signal,
             }
-            binance_tf = tf_map.get(timeframe, '1h')
-            
-            # Format symbol for Binance (e.g., BTC/USD -> BTCUSD)
-            binance_symbol = symbol.replace('/', '')
-            
-            # Calculate time range
-            end_time = int(datetime.now().timestamp() * 1000)
-            start_time = int((datetime.now() - timedelta(days=days_back)).timestamp() * 1000)
-            
-            # Get klines data from Binance
-            klines = self.binance_client.get_historical_klines(
-                binance_symbol,
-                binance_tf,
-                start_time,
-                end_time
+        except Exception as exc:
+            self.logger.warning("Sentiment update failed for %s: %s", symbol, exc)
+            normalized = {
+                "signal": "neutral",
+                "confidence": 0.0,
+                "reasoning": f"sentiment error: {exc}",
+                "raw": {},
+            }
+
+        self.sentiment_signals[symbol] = normalized
+        self.last_sentiment_refresh[symbol] = now
+        return normalized
+
+    def _process_earnings_signals(self, symbol):
+        """Refresh earnings signal for a symbol with safe neutral fallback."""
+        if not self.earnings_strategy:
+            return {"signal": "neutral", "confidence": 0.0, "reasoning": "earnings disabled"}
+
+        df = self.dataframes.get(symbol)
+        event_forced = symbol in self.pending_event_symbols
+        if symbol in self.earnings_signals and not event_forced:
+            return self.earnings_signals[symbol]
+
+        try:
+            signal = self.earnings_strategy.generate_signal(
+                symbol.replace("/", ""),
+                data=df.reset_index() if df is not None else None,
             )
-            
-            # Convert to dataframe
-            df = pd.DataFrame(klines, columns=[
-                'time', 'open', 'high', 'low', 'close', 'volume', 
-                'close_time', 'quote_asset_volume', 'trades', 
-                'taker_buy_base', 'taker_buy_quote', 'ignore'
-            ])
-            
-            # Format data types
-            df['time'] = pd.to_datetime(df['time'], unit='ms')
-            for col in ['open', 'high', 'low', 'close', 'volume']:
-                df[col] = df[col].astype(float)
-            
-            return df[['time', 'open', 'high', 'low', 'close', 'volume']]
-            
-        except Exception as e:
-            self.logger.error(f"Error getting Binance data: {e}")
+            normalized = {
+                "signal": str(signal.get("signal", "neutral")).lower(),
+                "confidence": float(signal.get("confidence", 0.0)),
+                "reasoning": signal.get("reasoning", "earnings analysis"),
+                "raw": signal,
+            }
+        except Exception as exc:
+            self.logger.warning("Earnings signal failed for %s: %s", symbol, exc)
+            normalized = {
+                "signal": "neutral",
+                "confidence": 0.0,
+                "reasoning": f"earnings error: {exc}",
+                "raw": {},
+            }
+
+        self.earnings_signals[symbol] = normalized
+        return normalized
+
+    def _build_technical_signal(self, symbol):
+        """Build technical signal from current symbol dataframe."""
+        df = self.dataframes.get(symbol)
+        if df is None or len(df) < 2:
+            return {"signal": "neutral", "confidence": 0.0, "reasoning": "insufficient data"}
+
+        try:
+            signal, confidence = check_entry(df)
+            normalized_signal = str(signal).lower()
+            if normalized_signal == "buy":
+                final_signal = "buy"
+            elif normalized_signal == "sell":
+                final_signal = "sell"
+            else:
+                final_signal = "neutral"
+            return {
+                "signal": final_signal,
+                "confidence": float(confidence or 0.0),
+                "reasoning": "technical strategy",
+            }
+        except Exception as exc:
+            return {
+                "signal": "neutral",
+                "confidence": 0.0,
+                "reasoning": f"technical error: {exc}",
+            }
+
+    def _signal_to_direction(self, signal):
+        if signal == "buy":
+            return 1.0
+        if signal == "sell":
+            return -1.0
+        return 0.0
+
+    def _combine_signals(self, technical_signal, sentiment_signal, earnings_signal):
+        """Combine technical, sentiment, and earnings signals with weights."""
+        components = []
+
+        tech_weight = max(
+            0.0,
+            1.0
+            - (self.news_weight if self.use_news else 0.0)
+            - (self.earnings_weight if self.use_earnings else 0.0),
+        )
+        if tech_weight == 0.0 and (not self.use_news and not self.use_earnings):
+            tech_weight = 1.0
+
+        components.append(("technical", technical_signal, tech_weight))
+        if self.use_news:
+            components.append(("sentiment", sentiment_signal, max(0.0, self.news_weight)))
+        if self.use_earnings:
+            components.append(("earnings", earnings_signal, max(0.0, self.earnings_weight)))
+
+        total_weight = sum(weight for _, _, weight in components)
+        if total_weight <= 0:
+            equal_weight = 1.0 / len(components)
+            components = [(name, signal, equal_weight) for name, signal, _ in components]
+            total_weight = 1.0
+
+        weighted_score = 0.0
+        reasoning = []
+        for name, signal, weight in components:
+            direction = self._signal_to_direction(signal.get("signal", "neutral"))
+            confidence = float(signal.get("confidence", 0.0))
+            weighted_score += direction * confidence * weight
+            reasoning.append(
+                f"{name}: {signal.get('signal', 'neutral')}@{confidence:.2f} (w={weight:.2f})"
+            )
+
+        normalized_score = weighted_score / total_weight
+        abs_score = abs(normalized_score)
+        if normalized_score >= 0.15:
+            final_signal = "buy"
+        elif normalized_score <= -0.15:
+            final_signal = "sell"
+        else:
+            final_signal = "neutral"
+
+        return {
+            "signal": final_signal,
+            "confidence": min(1.0, abs_score),
+            "reasoning": "; ".join(reasoning),
+            "score": normalized_score,
+        }
+
+    def _analyze_symbol(self, symbol):
+        """Analyze symbol and produce a structured Prediction alongside legacy signal."""
+        technical = self._build_technical_signal(symbol)
+        sentiment = self.sentiment_signals.get(
+            symbol, {"signal": "neutral", "confidence": 0.0, "reasoning": "no sentiment"}
+        )
+        earnings = self.earnings_signals.get(
+            symbol, {"signal": "neutral", "confidence": 0.0, "reasoning": "no earnings"}
+        )
+
+        combined = self._combine_signals(technical, sentiment, earnings)
+
+        # Produce structured prediction via the engine
+        df = self.dataframes.get(symbol)
+        prediction = self.prediction_engine.predict(
+            symbol,
+            df,
+            sentiment_override=sentiment,
+            earnings_override=earnings,
+            horizon=self._horizon_from_timeframe(),
+        )
+        self.latest_predictions[symbol] = prediction
+        self.logger.info("Prediction: %s", prediction.summary())
+
+        result = {
+            "symbol": symbol,
+            "timestamp": datetime.now().isoformat(),
+            "technical": technical,
+            "sentiment": sentiment,
+            "earnings": earnings,
+            "combined": combined,
+            "prediction": prediction.to_dict(),
+        }
+        self.last_signal[symbol] = result
+
+        signal = combined["signal"]
+        confidence = combined["confidence"]
+        if signal in ("buy", "sell") and confidence >= 0.55:
+            message = (
+                f"{symbol} signal: {signal.upper()} "
+                f"(confidence={confidence:.2f}) | {combined['reasoning']}"
+            )
+            self.logger.info(message)
+            try:
+                send_alert(message)
+            except Exception as exc:
+                self.logger.warning("Failed to send alert for %s: %s", symbol, exc)
+
+            if self.signal_only:
+                self.logger.info("Signal-only mode enabled. No order placement for %s.", symbol)
+
+        self.pending_event_symbols.discard(symbol)
+        return result
+
+    def _extract_payload_symbols(self, payload):
+        """Extract symbol list from webhook payload."""
+        symbols = []
+        if not isinstance(payload, dict):
+            return symbols
+
+        if isinstance(payload.get("symbol"), str):
+            symbols.append(payload["symbol"])
+
+        raw_symbols = payload.get("symbols")
+        if isinstance(raw_symbols, list):
+            symbols.extend([s for s in raw_symbols if isinstance(s, str)])
+
+        data = payload.get("data")
+        if isinstance(data, dict) and isinstance(data.get("symbol"), str):
+            symbols.append(data["symbol"])
+
+        # Finnhub earnings payloads can carry ticker-like fields.
+        for field in ("ticker", "code"):
+            if isinstance(payload.get(field), str):
+                symbols.append(payload[field])
+
+        cleaned = []
+        for symbol in symbols:
+            normalized = self._normalize_symbol(symbol)
+            if normalized in self.symbols:
+                cleaned.append(normalized)
+        return list(dict.fromkeys(cleaned))
+
+    def process_news_event(self, payload):
+        """Webhook callback for news events."""
+        try:
+            target_symbols = self._extract_payload_symbols(payload) or self.symbols
+            for symbol in target_symbols:
+                self.pending_event_symbols.add(symbol)
+                self._update_sentiment(symbol)
+                self._analyze_symbol(symbol)
+            return True
+        except Exception as exc:
+            self.logger.error("Error processing news event: %s", exc)
+            return False
+
+    def process_earnings_event(self, payload):
+        """Webhook callback for earnings events."""
+        try:
+            target_symbols = self._extract_payload_symbols(payload) or self.symbols
+            for symbol in target_symbols:
+                self.pending_event_symbols.add(symbol)
+                self._process_earnings_signals(symbol)
+                if self.use_news:
+                    self._update_sentiment(symbol)
+                self._analyze_symbol(symbol)
+            return True
+        except Exception as exc:
+            self.logger.error("Error processing earnings event: %s", exc)
+            return False
+
+    def get_historical_data(self, symbol, timeframe, days_back=30):
+        """Get historical data for compatibility with existing callers."""
+        normalized_symbol = self._normalize_symbol(symbol)
+        previous_timeframe = self.timeframe
+        self.timeframe = self._normalize_timeframe(timeframe)
+        try:
+            df = self._fetch_alpaca_crypto_bars(normalized_symbol, days_back=days_back)
+            if df is None or df.empty:
+                df = self._generate_synthetic_data(normalized_symbol, days_back=days_back)
+            if df is None:
+                return None
+            out = df.reset_index().rename(columns={"timestamp": "time"})
+            return out[["time", "open", "high", "low", "close", "volume"]]
+        finally:
+            self.timeframe = previous_timeframe
+
+    def _generate_synthetic_data(self, symbol, days_back=30):
+        """Generate synthetic OHLCV data."""
+        try:
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days_back)
+            dates = pd.date_range(start=start_date, end=end_date, freq="1h")
+
+            if "BTC" in symbol:
+                base_price = 30000
+            elif "ETH" in symbol:
+                base_price = 2000
+            elif "BNB" in symbol:
+                base_price = 500
+            elif "ADA" in symbol:
+                base_price = 0.6
+            elif "SOL" in symbol:
+                base_price = 140
+            elif "DOGE" in symbol:
+                base_price = 0.15
+            elif "XAU" in symbol or "GOLD" in symbol:
+                base_price = 2400
+            else:
+                base_price = 100
+
+            close_prices = [base_price]
+            for _ in range(1, len(dates)):
+                price_change = np.random.normal(0, base_price * 0.01)
+                close_prices.append(max(0.01, close_prices[-1] + price_change))
+
+            df = pd.DataFrame({"timestamp": dates, "close": close_prices})
+            df["open"] = df["close"].shift(1)
+            df.loc[df.index[0], "open"] = df.loc[df.index[0], "close"]
+            df["high"] = df[["open", "close"]].max(axis=1) * (
+                1 + np.abs(np.random.normal(0, 0.005, len(df)))
+            )
+            df["low"] = df[["open", "close"]].min(axis=1) * (
+                1 - np.abs(np.random.normal(0, 0.005, len(df)))
+            )
+            df["volume"] = np.random.randint(100, 10000, len(df))
+            return df.set_index("timestamp")
+        except Exception as exc:
+            self.logger.error("Error generating synthetic data for %s: %s", symbol, exc)
             return None
 
     def get_active_trades(self):
-        """Get list of active trades"""
+        """Get list of active trades."""
         return list(self.active_trades.values())
-    
+
     def get_last_signal(self):
-        """Get the last generated signal"""
+        """Get the last generated signals by symbol."""
         return self.last_signal
-    
+
     def get_current_pnl(self):
-        """Get current total PnL"""
+        """Get current total PnL."""
         return self.total_pnl
+
+    def get_latest_predictions(self):
+        """Get the most recent Prediction object for each symbol."""
+        return dict(self.latest_predictions)
+
+    def _horizon_from_timeframe(self):
+        """Map the configured timeframe to a prediction horizon string."""
+        mapping = {
+            "1Min": "1h", "3Min": "1h", "5Min": "1h", "15Min": "1h",
+            "30Min": "1h", "1Hour": "1h", "2Hour": "4h", "4Hour": "4h",
+            "6Hour": "4h", "12Hour": "1d", "1Day": "1d",
+        }
+        return mapping.get(self.timeframe, "1h")
